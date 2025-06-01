@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Firebreak</title>
+  <style>
+    body { margin: 0; background: #222; overflow: hidden; cursor: none; }
+    canvas { display: block; margin: auto; background: #333; }
+  </style>
+</head>
+<body>
+<canvas id="gameCanvas" width="800" height="600"></canvas>
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+const worldWidth = 3200;
+const worldHeight = 2400;
+const zoom = 0.75;
+
+let camX = 0, camY = 0;
+let mouseX = 400, mouseY = 300;
+let playerX = 400, playerY = 300;
+let leftHeld = false, rightHeld = false;
+let keys = {};
+let gameOver = false;
+let endMessageShown = false;
+let savedCount = 0;
+let trees = [];
+
+// Key press detection
+window.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
+window.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
+
+// Generate irregular clearings
+const clearings = [];
+for (let i = 0; i < 5 + Math.floor(Math.random() * 6); i++) {
+  const blob = [];
+  const cx = Math.random() * worldWidth;
+  const cy = Math.random() * worldHeight;
+  const blobs = 3 + Math.floor(Math.random() * 4);
+  for (let j = 0; j < blobs; j++) {
+    blob.push({
+      x: cx + (Math.random() - 0.5) * 200,
+      y: cy + (Math.random() - 0.5) * 200,
+      r: 80 + Math.random() * 100
+    });
+  }
+  clearings.push(blob);
+}
+function inClearing(x, y) {
+  return clearings.some(blob =>
+    blob.some(c => {
+      const dx = c.x - x;
+      const dy = c.y - y;
+      return dx * dx + dy * dy < c.r * c.r;
+    })
+  );
+}
+
+// Generate trees outside clearings
+for (let i = 0; i < 20000; i++) {
+  let tx = Math.random() * worldWidth;
+  let ty = Math.random() * worldHeight;
+  if (inClearing(tx, ty)) continue;
+  trees.push({
+    x: tx,
+    y: ty,
+    state: "normal",
+    spreadTimer: Math.random() * 2000,
+    extinguishTimer: 0,
+    burnDuration: 0,
+    cutTimer: 0
+  });
+}
+
+// Start fires
+let started = 0;
+while (started < 5) {
+  let t = trees[Math.floor(Math.random() * trees.length)];
+  if (t.state === "normal") {
+    t.state = "burning";
+    t.spreadTimer = 1500 + Math.random() * 500;
+    t.burnDuration = 0;
+    started++;
+  }
+}
+
+// Input handlers
+canvas.addEventListener("mousemove", e => {
+  const rect = canvas.getBoundingClientRect();
+  mouseX = e.clientX - rect.left;
+  mouseY = e.clientY - rect.top;
+  playerX = camX + mouseX / zoom;
+  playerY = camY + mouseY / zoom;
+});
+canvas.addEventListener("mousedown", e => {
+  if (e.button === 0) leftHeld = true;
+  if (e.button === 2) rightHeld = true;
+});
+canvas.addEventListener("mouseup", e => {
+  if (e.button === 0) leftHeld = false;
+  if (e.button === 2) rightHeld = false;
+});
+canvas.addEventListener("contextmenu", e => e.preventDefault());
+
+function update(delta) {
+  // Camera movement
+  const panSpeed = 300 * delta / 1000;
+  if (keys["a"]) camX -= panSpeed;
+  if (keys["d"]) camX += panSpeed;
+  if (keys["w"]) camY -= panSpeed;
+  if (keys["s"]) camY += panSpeed;
+
+  if (mouseX < 50) camX -= panSpeed;
+  if (mouseX > canvas.width - 50) camX += panSpeed;
+  if (mouseY < 50) camY -= panSpeed;
+  if (mouseY > canvas.height - 50) camY += panSpeed;
+
+  const maxCamX = worldWidth - canvas.width / zoom;
+  const maxCamY = worldHeight - canvas.height / zoom;
+  camX = Math.max(0, Math.min(maxCamX, camX));
+  camY = Math.max(0, Math.min(maxCamY, camY));
+
+  if (gameOver) return;
+
+  trees.forEach(tree => {
+    if (tree.state === "burning") {
+      tree.spreadTimer += delta;
+      tree.burnDuration += delta;
+      if (tree.burnDuration >= 5000) tree.state = "burnt";
+      if (tree.spreadTimer >= 2000 + Math.random() * 2000) {
+        tree.spreadTimer = 0;
+        let lit = 0;
+        for (let i = 0; i < trees.length && lit < 2; i++) {
+          let other = trees[i];
+          if (other.state === "normal") {
+            const dx = other.x - tree.x;
+            const dy = other.y - tree.y;
+            if (dx * dx + dy * dy < 1600 && Math.random() < 0.25) {
+              other.state = "burning";
+              other.spreadTimer = 0;
+              other.extinguishTimer = 0;
+              other.burnDuration = 0;
+              lit++;
+            }
+          }
+        }
+      }
+    }
+
+    if (rightHeld && tree.state === "burning") {
+      const dx = tree.x - playerX;
+      const dy = tree.y - playerY;
+      if (dx * dx + dy * dy < 900) {
+        tree.extinguishTimer += delta;
+        if (tree.extinguishTimer >= 400) {
+          tree.state = "normal";
+          tree.spreadTimer = 0;
+          tree.extinguishTimer = 0;
+          tree.burnDuration = 0;
+        }
+      } else {
+        tree.extinguishTimer = 0;
+      }
+    } else {
+      tree.extinguishTimer = 0;
+    }
+
+    if (leftHeld && tree.state === "normal") {
+      const dx = tree.x - playerX;
+      const dy = tree.y - playerY;
+      if (dx * dx + dy * dy < 400) {
+        tree.cutTimer += delta;
+        if (tree.cutTimer >= 200) {
+          tree.state = "burnt";
+          tree.cutTimer = 0;
+        }
+      } else {
+        tree.cutTimer = 0;
+      }
+    } else {
+      tree.cutTimer = 0;
+    }
+  });
+
+  if (!trees.some(t => t.state === "burning") && !gameOver) {
+    savedCount = trees.filter(t => t.state === "normal").length;
+    gameOver = true;
+    setTimeout(() => {
+      if (!endMessageShown) alert(`🔥 Fire controlled! You win!\n🌲 Trees saved: ${savedCount}`);
+      endMessageShown = true;
+    }, 100);
+  } else if (!trees.some(t => t.state === "normal") && !gameOver) {
+    savedCount = 0;
+    gameOver = true;
+    setTimeout(() => {
+      if (!endMessageShown) alert(`🌲 All trees are burnt! Game over.\n🌲 Trees saved: ${savedCount}`);
+      endMessageShown = true;
+    }, 100);
+  }
+}
+
+function drawMiniMap() {
+  const miniWidth = 160;
+  const miniHeight = 120;
+  const scaleX = miniWidth / worldWidth;
+  const scaleY = miniHeight / worldHeight;
+
+  ctx.fillStyle = "#000";
+  ctx.fillRect(10, 10, miniWidth + 2, miniHeight + 2);
+  trees.forEach(tree => {
+    const x = 11 + tree.x * scaleX;
+    const y = 11 + tree.y * scaleY;
+    ctx.fillStyle = tree.state === "normal" ? "green" :
+                    tree.state === "burning" ? "orange" : "black";
+    ctx.fillRect(x, y, 1, 1);
+  });
+
+  ctx.fillStyle = "blue";
+  ctx.fillRect(11 + playerX * scaleX, 11 + playerY * scaleY, 2, 2);
+}
+
+function drawCursor() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.font = "24px Arial";
+  if (leftHeld) {
+    ctx.fillText("🪓", mouseX - 10, mouseY + 10);
+  } else if (rightHeld) {
+    ctx.fillText("💧", mouseX - 10, mouseY + 10);
+  } else {
+    ctx.fillText("🖱️", mouseX - 10, mouseY + 10);
+  }
+}
+
+function draw() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.setTransform(zoom, 0, 0, zoom, -camX * zoom, -camY * zoom);
+
+  trees.forEach(tree => {
+    ctx.fillStyle = tree.state === "normal" ? "green" :
+                    tree.state === "burning" ? "orange" : "black";
+    ctx.beginPath();
+    ctx.arc(tree.x, tree.y, 4, 0, Math.PI * 2);
+    ctx.fill();
+    if (tree.state === "burning") {
+      ctx.strokeStyle = "rgba(255,165,0,0.1)";
+      ctx.beginPath();
+      ctx.arc(tree.x, tree.y, 40, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  });
+
+  ctx.fillStyle = "blue";
+  ctx.beginPath();
+  ctx.arc(playerX, playerY, 10, 0, Math.PI * 2);
+  ctx.fill();
+
+  // HUD
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "white";
+  ctx.font = "16px Arial";
+  ctx.fillText(`Trees saved: ${trees.filter(t => t.state === "normal").length}`, 10, 150);
+  drawMiniMap();
+  drawCursor();
+}
+
+let lastTime = performance.now();
+function gameLoop(time) {
+  let delta = time - lastTime;
+  lastTime = time;
+  update(delta);
+  draw();
+  requestAnimationFrame(gameLoop);
+}
+gameLoop(lastTime);
+</script>
+</body>
+</html>
