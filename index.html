@@ -23,70 +23,18 @@ let mouseX = 400, mouseY = 300;
 let playerX = 400, playerY = 300;
 let leftHeld = false, rightHeld = false;
 let keys = {};
+let trees = [];
+let particles = [];
+
 let gameOver = false;
 let endMessageShown = false;
+let gameStarted = false;
 let savedCount = 0;
-let trees = [];
+let fireStartTimer = 0;
 
-// Key press detection
+// Input
 window.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
 window.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
-
-// Generate irregular clearings
-const clearings = [];
-for (let i = 0; i < 5 + Math.floor(Math.random() * 6); i++) {
-  const blob = [];
-  const cx = Math.random() * worldWidth;
-  const cy = Math.random() * worldHeight;
-  const blobs = 3 + Math.floor(Math.random() * 4);
-  for (let j = 0; j < blobs; j++) {
-    blob.push({
-      x: cx + (Math.random() - 0.5) * 200,
-      y: cy + (Math.random() - 0.5) * 200,
-      r: 80 + Math.random() * 100
-    });
-  }
-  clearings.push(blob);
-}
-function inClearing(x, y) {
-  return clearings.some(blob =>
-    blob.some(c => {
-      const dx = c.x - x;
-      const dy = c.y - y;
-      return dx * dx + dy * dy < c.r * c.r;
-    })
-  );
-}
-
-// Generate trees outside clearings
-for (let i = 0; i < 20000; i++) {
-  let tx = Math.random() * worldWidth;
-  let ty = Math.random() * worldHeight;
-  if (inClearing(tx, ty)) continue;
-  trees.push({
-    x: tx,
-    y: ty,
-    state: "normal",
-    spreadTimer: Math.random() * 2000,
-    extinguishTimer: 0,
-    burnDuration: 0,
-    cutTimer: 0
-  });
-}
-
-// Start fires
-let started = 0;
-while (started < 5) {
-  let t = trees[Math.floor(Math.random() * trees.length)];
-  if (t.state === "normal") {
-    t.state = "burning";
-    t.spreadTimer = 1500 + Math.random() * 500;
-    t.burnDuration = 0;
-    started++;
-  }
-}
-
-// Input handlers
 canvas.addEventListener("mousemove", e => {
   const rect = canvas.getBoundingClientRect();
   mouseX = e.clientX - rect.left;
@@ -95,6 +43,10 @@ canvas.addEventListener("mousemove", e => {
   playerY = camY + mouseY / zoom;
 });
 canvas.addEventListener("mousedown", e => {
+  if (!gameStarted) {
+    startGame();
+    return;
+  }
   if (e.button === 0) leftHeld = true;
   if (e.button === 2) rightHeld = true;
 });
@@ -104,14 +56,97 @@ canvas.addEventListener("mouseup", e => {
 });
 canvas.addEventListener("contextmenu", e => e.preventDefault());
 
+function generateGame() {
+  camX = 0; camY = 0;
+  trees = [];
+  gameOver = false;
+  endMessageShown = false;
+  savedCount = 0;
+  fireStartTimer = 0;
+
+  const clearings = [];
+  for (let i = 0; i < 5 + Math.floor(Math.random() * 6); i++) {
+    const blob = [];
+    const cx = Math.random() * worldWidth;
+    const cy = Math.random() * worldHeight;
+    const blobs = 3 + Math.floor(Math.random() * 4);
+    for (let j = 0; j < blobs; j++) {
+      blob.push({
+        x: cx + (Math.random() - 0.5) * 200,
+        y: cy + (Math.random() - 0.5) * 200,
+        r: 80 + Math.random() * 100
+      });
+    }
+    clearings.push(blob);
+  }
+
+  function inClearing(x, y) {
+    return clearings.some(blob =>
+      blob.some(c => {
+        const dx = c.x - x;
+        const dy = c.y - y;
+        return dx * dx + dy * dy < c.r * c.r;
+      })
+    );
+  }
+
+  for (let i = 0; i < 20000; i++) {
+    let tx = Math.random() * worldWidth;
+    let ty = Math.random() * worldHeight;
+    if (inClearing(tx, ty)) continue;
+    trees.push({
+      x: tx,
+      y: ty,
+      state: "normal",
+      spreadTimer: Math.random() * 2000,
+      extinguishTimer: 0,
+      burnDuration: 0,
+      cutTimer: 0
+    });
+  }
+
+  // Start fires
+  let started = 0;
+  while (started < 5) {
+    let t = trees[Math.floor(Math.random() * trees.length)];
+    if (t.state === "normal") {
+      t.state = "burning";
+      t.spreadTimer = 1500 + Math.random() * 500;
+      t.burnDuration = 0;
+      started++;
+    }
+  }
+}
+
+function startGame() {
+  gameStarted = true;
+  generateGame();
+}
+
+function endGame(message) {
+  gameOver = true;
+  setTimeout(() => {
+    alert(message);
+    gameStarted = false;
+  }, 100);
+}
+
 function update(delta) {
-  // Camera movement
+  // Update smoke/ember particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    let p = particles[i];
+    p.x += p.vx * delta / 1000;
+    p.y += p.vy * delta / 1000;
+    p.life -= delta;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+  if (!gameStarted || gameOver) return;
+
   const panSpeed = 300 * delta / 1000;
   if (keys["a"]) camX -= panSpeed;
   if (keys["d"]) camX += panSpeed;
   if (keys["w"]) camY -= panSpeed;
   if (keys["s"]) camY += panSpeed;
-
   if (mouseX < 50) camX -= panSpeed;
   if (mouseX > canvas.width - 50) camX += panSpeed;
   if (mouseY < 50) camY -= panSpeed;
@@ -122,14 +157,38 @@ function update(delta) {
   camX = Math.max(0, Math.min(maxCamX, camX));
   camY = Math.max(0, Math.min(maxCamY, camY));
 
-  if (gameOver) return;
+  // Chance to start a new fire globally
+  fireStartTimer += delta;
+  if (fireStartTimer >= 5000) {
+    fireStartTimer = 0;
+    if (Math.random() < 0.10) {
+      let normalTrees = trees.filter(t => t.state === "normal");
+      if (normalTrees.length > 0) {
+        let t = normalTrees[Math.floor(Math.random() * normalTrees.length)];
+        t.state = "burning";
+        t.spreadTimer = 0;
+        t.burnDuration = 0;
+      }
+    }
+  }
 
   trees.forEach(tree => {
     if (tree.state === "burning") {
+      // Add ember and smoke particles
+      if (Math.random() < 0.3) {
+        particles.push({
+          x: tree.x,
+          y: tree.y,
+          vx: (Math.random() - 0.5) * 20,
+          vy: -Math.random() * 30,
+          life: 1000 + Math.random() * 1000,
+          type: Math.random() < 0.5 ? 'ember' : 'smoke'
+        });
+      }
       tree.spreadTimer += delta;
       tree.burnDuration += delta;
-      if (tree.burnDuration >= 5000) tree.state = "burnt";
-      if (tree.spreadTimer >= 2000 + Math.random() * 2000) {
+      if (tree.burnDuration >= 15000) tree.state = "burnt";
+      if (tree.spreadTimer >= 800 + Math.random() * 400) {
         tree.spreadTimer = 0;
         let lit = 0;
         for (let i = 0; i < trees.length && lit < 2; i++) {
@@ -137,7 +196,7 @@ function update(delta) {
           if (other.state === "normal") {
             const dx = other.x - tree.x;
             const dy = other.y - tree.y;
-            if (dx * dx + dy * dy < 1600 && Math.random() < 0.25) {
+            if (dx * dx + dy * dy < 1600 && Math.random() < 0.02) {
               other.state = "burning";
               other.spreadTimer = 0;
               other.extinguishTimer = 0;
@@ -149,34 +208,26 @@ function update(delta) {
       }
     }
 
-    if (rightHeld && tree.state === "burning") {
-      const dx = tree.x - playerX;
-      const dy = tree.y - playerY;
-      if (dx * dx + dy * dy < 900) {
-        tree.extinguishTimer += delta;
-        if (tree.extinguishTimer >= 400) {
-          tree.state = "normal";
-          tree.spreadTimer = 0;
-          tree.extinguishTimer = 0;
-          tree.burnDuration = 0;
-        }
-      } else {
+    const dx = tree.x - playerX;
+    const dy = tree.y - playerY;
+    const dist2 = dx * dx + dy * dy;
+
+    if (rightHeld && tree.state === "burning" && dist2 < 900) {
+      tree.extinguishTimer += delta;
+      if (tree.extinguishTimer >= 400) {
+        tree.state = "normal";
+        tree.spreadTimer = 0;
         tree.extinguishTimer = 0;
+        tree.burnDuration = 0;
       }
     } else {
       tree.extinguishTimer = 0;
     }
 
-    if (leftHeld && tree.state === "normal") {
-      const dx = tree.x - playerX;
-      const dy = tree.y - playerY;
-      if (dx * dx + dy * dy < 400) {
-        tree.cutTimer += delta;
-        if (tree.cutTimer >= 200) {
-          tree.state = "burnt";
-          tree.cutTimer = 0;
-        }
-      } else {
+    if (leftHeld && tree.state === "normal" && dist2 < 400) {
+      tree.cutTimer += delta;
+      if (tree.cutTimer >= 200) {
+        tree.state = "burnt";
         tree.cutTimer = 0;
       }
     } else {
@@ -186,18 +237,9 @@ function update(delta) {
 
   if (!trees.some(t => t.state === "burning") && !gameOver) {
     savedCount = trees.filter(t => t.state === "normal").length;
-    gameOver = true;
-    setTimeout(() => {
-      if (!endMessageShown) alert(`🔥 Fire controlled! You win!\n🌲 Trees saved: ${savedCount}`);
-      endMessageShown = true;
-    }, 100);
+    endGame(`🔥 Fire controlled! You win!\n🌲 Trees saved: ${savedCount}`);
   } else if (!trees.some(t => t.state === "normal") && !gameOver) {
-    savedCount = 0;
-    gameOver = true;
-    setTimeout(() => {
-      if (!endMessageShown) alert(`🌲 All trees are burnt! Game over.\n🌲 Trees saved: ${savedCount}`);
-      endMessageShown = true;
-    }, 100);
+    endGame(`🌲 All trees are burnt! Game over.\n🌲 Trees saved: 0`);
   }
 }
 
@@ -216,7 +258,6 @@ function drawMiniMap() {
                     tree.state === "burning" ? "orange" : "black";
     ctx.fillRect(x, y, 1, 1);
   });
-
   ctx.fillStyle = "blue";
   ctx.fillRect(11 + playerX * scaleX, 11 + playerY * scaleY, 2, 2);
 }
@@ -224,20 +265,49 @@ function drawMiniMap() {
 function drawCursor() {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.font = "24px Arial";
-  if (leftHeld) {
-    ctx.fillText("🪓", mouseX - 10, mouseY + 10);
-  } else if (rightHeld) {
-    ctx.fillText("💧", mouseX - 10, mouseY + 10);
-  } else {
-    ctx.fillText("🖱️", mouseX - 10, mouseY + 10);
-  }
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  let icon = "🔁"; // Default
+  if (leftHeld) icon = "🪓";
+  else if (rightHeld) icon = "💧";
+  ctx.fillText(icon, mouseX, mouseY);
+}
+
+function drawInstructions() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "white";
+  ctx.font = "24px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText("\uD83D\uDD25 FIREBREAK \uD83D\uDD25", canvas.width / 2, 100);
+  ctx.font = "18px Arial";
+  ctx.fillText("Left click (🪓) to cut trees", canvas.width / 2, 150);
+  ctx.fillText("Right click (💧) to extinguish burning trees", canvas.width / 2, 180);
+  ctx.fillText("Use WASD or edges to pan the map", canvas.width / 2, 210);
+  ctx.fillText("Goal: To stop all fires.", canvas.width / 2, 240);
+  ctx.fillText("Click anywhere to start", canvas.width / 2, 300);
 }
 
 function draw() {
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.setTransform(zoom, 0, 0, zoom, -camX * zoom, -camY * zoom);
 
+  // Draw particles
+  particles.forEach(p => {
+    ctx.globalAlpha = Math.max(0, p.life / 1000);
+    ctx.fillStyle = p.type === 'ember' ? 'orange' : 'gray';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.type === 'ember' ? 2 : 4, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1.0;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (!gameStarted) {
+    drawInstructions();
+    return;
+  }
+
+  ctx.setTransform(zoom, 0, 0, zoom, -camX * zoom, -camY * zoom);
   trees.forEach(tree => {
     ctx.fillStyle = tree.state === "normal" ? "green" :
                     tree.state === "burning" ? "orange" : "black";
@@ -254,10 +324,9 @@ function draw() {
 
   ctx.fillStyle = "blue";
   ctx.beginPath();
-  ctx.arc(playerX, playerY, 10, 0, Math.PI * 2);
+  ctx.arc(playerX, playerY, 14, 0, Math.PI * 2);
   ctx.fill();
 
-  // HUD
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = "white";
   ctx.font = "16px Arial";
