@@ -69,7 +69,7 @@ export const missions = [
       humidity: 30,
       windAngle: 0,
       windStrength: 0.3,
-      randomizeWind: false,
+      randomizeWind: true,
     },
   },
   {
@@ -93,7 +93,7 @@ export const missions = [
       humidity: 25,
       windAngle: 0,
       windStrength: 0.1,
-      randomizeWind: false,
+      randomizeWind: true,
     },
   }
 ];

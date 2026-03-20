@@ -49,6 +49,20 @@ export class BaseMode {
   }
 
   /**
+   * Skill cost multiplier (1 = normal, 0 = free)
+   */
+  getSkillCostMultiplier() {
+    return 1;
+  }
+
+  /**
+   * Whether skills should be free to use in this mode
+   */
+  isSkillFree() {
+    return false;
+  }
+
+  /**
    * Called when player completes a level
    */
   onLevelComplete(finalMoney) {

@@ -751,13 +751,28 @@ export class GameState {
     this.skillMessageTimer = 2;
   }
 
+  getSkillCost(skill) {
+    if (!skill) return 0;
+    const multiplier = this.gameMode?.getSkillCostMultiplier?.() ?? 1;
+    return Math.max(0, skill.cost * multiplier);
+  }
+
+  isSkillFree() {
+    return this.gameMode?.isSkillFree?.() ?? false;
+  }
+
   _executeWaterBomberStrafe(x1, y1, x2, y2) {
-    if (this.money < 50) {
+    const skill = this.skills[1];
+    const cost = this.getSkillCost(skill);
+
+    if (this.money < cost) {
       this._setSkillMessage("Not enough money");
       return;
     }
 
-    this.money -= 50;
+    if (cost > 0) {
+      this.money -= cost;
+    }
     
     // Calculate extended strafe path (entry point before start, exit point after end)
     const dx = x2 - x1;
@@ -815,6 +830,16 @@ export class GameState {
   }
 
   _executeHeliDrop(x, y) {
+    const skill = this.skills[3];
+    const cost = this.getSkillCost(skill);
+    if (this.money < cost) {
+      this._setSkillMessage("Not enough money");
+      return;
+    }
+    if (cost > 0) {
+      this.money -= cost;
+    }
+
     // Start helicopter animation (spray happens during animation)
     this.heliDropAnimations.push({
       x,
@@ -849,6 +874,16 @@ export class GameState {
   }
 
   _executeWorkerCrew(x, y) {
+    const skill = this.skills[4];
+    const cost = this.getSkillCost(skill);
+    if (this.money < cost) {
+      this._setSkillMessage("Not enough money");
+      return;
+    }
+    if (cost > 0) {
+      this.money -= cost;
+    }
+
     // Create a humidity buff zone that lasts 10 seconds
     this.workerCrewZone = {
       x,
@@ -865,12 +900,15 @@ export class GameState {
     const skill = this.skills[this.selectedSkillKey];
     if (!skill) return;
 
-    if (this.money < skill.cost) {
+    const cost = this.getSkillCost(skill);
+    if (this.money < cost) {
       this._setSkillMessage("Not enough money");
       return;
     }
 
-    this.money -= skill.cost;
+    if (cost > 0) {
+      this.money -= cost;
+    }
 
     const targets = this.forest.grid.queryCircle(worldX, worldY, skill.radius);
 
@@ -923,14 +961,15 @@ export class GameState {
     const skill = this.skills[5];
     if (!skill) return;
 
-    // Check money before placing
-    if (this.money < skill.cost) {
+    const cost = this.getSkillCost(skill);
+    if (this.money < cost) {
       this._setSkillMessage("Not enough money");
       return;
     }
 
-    // Deduct cost
-    this.money -= skill.cost;
+    if (cost > 0) {
+      this.money -= cost;
+    }
 
     // Add watch tower zone
     this.watchTowerZones.push({
@@ -965,12 +1004,16 @@ export class GameState {
     this.forest.forNearby(x, y, radius, (tree) => {
       if (processed >= maxPerTick) return false;
 
-      if (left && tree.state === "normal") {
+      if (left && (tree.state === "normal" || tree.state === "wet")) {
         tree.cutTimer += dt;
         const cutThreshold = this.bulldozerActive ? this.bulldozerCutTime : 0.9;
         if (tree.cutTimer >= cutThreshold) {
           this.forest.setState(tree, "burnt");
-          this.money += 0.5;
+          if (this.bulldozerActive && !this.isSkillFree()) {
+            // Bulldozer mode costs money outside training.
+            this.money -= 1;
+          }
+          // Hand cutting now does not gain money in any mode.
         }
         processed++;
       }
@@ -979,7 +1022,7 @@ export class GameState {
         tree.extinguishTimer += dt;
         if (tree.extinguishTimer >= 0.7) {
           this.forest.setState(tree, "wet");
-          this.money += 1;
+          // Hand extinguish now does not gain money in any mode.
         }
         processed++;
       }
@@ -1203,7 +1246,7 @@ export class GameState {
       if (dist > radius) continue;
 
       // Check if this tree would be affected by current action
-      const canAffect = (left && tree.state === "normal") || (right && tree.state !== "wet" && tree.state !== "burnt");
+      const canAffect = (left && (tree.state === "normal" || tree.state === "wet")) || (right && tree.state !== "wet" && tree.state !== "burnt");
       
       if (canAffect) {
         // Draw highlight glow around tree

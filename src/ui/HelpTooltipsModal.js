@@ -258,7 +258,7 @@ export class HelpTooltipsModal {
     const modalWidth = 350;
     const buttonHeight = 40;
     const buttonWidth = 100;
-    const modalHeight = 250; // Approximate
+    const modalHeight = 250; // Matches render() value
 
     const modalX = padding;
     const modalY = (this.canvasHeight - modalHeight) / 2;

@@ -75,7 +75,8 @@ export class SkillHotbarHUD {
         this.gameState.skillMessageTimer = 2;
         return;
       }
-      if (this.gameState.money < this.gameState.skills[1].cost) {
+      const bomberCost = this.gameState.getSkillCost(this.gameState.skills[1]);
+      if (this.gameState.money < bomberCost) {
         this.gameState.skillMessage = "Not enough money";
         this.gameState.skillMessageTimer = 2;
         return;
@@ -93,7 +94,8 @@ export class SkillHotbarHUD {
         this.gameState.skillMessageTimer = 2;
         return;
       }
-      if (this.gameState.money < this.gameState.skills[2].cost && !this.gameState.bulldozerActive) {
+      const bulldozerCost = this.gameState.getSkillCost(this.gameState.skills[2]);
+      if (this.gameState.money < bulldozerCost && !this.gameState.bulldozerActive) {
         this.gameState.skillMessage = "Not enough money";
         this.gameState.skillMessageTimer = 2;
         return;
@@ -111,7 +113,8 @@ export class SkillHotbarHUD {
         this.gameState.skillMessageTimer = 2;
         return;
       }
-      if (this.gameState.money < this.gameState.skills[3].cost) {
+      const heliCost = this.gameState.getSkillCost(this.gameState.skills[3]);
+      if (this.gameState.money < heliCost) {
         this.gameState.skillMessage = "Not enough money";
         this.gameState.skillMessageTimer = 2;
         return;
@@ -129,7 +132,8 @@ export class SkillHotbarHUD {
         this.gameState.skillMessageTimer = 2;
         return;
       }
-      if (this.gameState.money < this.gameState.skills[4].cost) {
+      const crewCost = this.gameState.getSkillCost(this.gameState.skills[4]);
+      if (this.gameState.money < crewCost) {
         this.gameState.skillMessage = "Not enough money";
         this.gameState.skillMessageTimer = 2;
         return;
@@ -147,7 +151,8 @@ export class SkillHotbarHUD {
         this.gameState.skillMessageTimer = 2;
         return;
       }
-      if (this.gameState.money < this.gameState.skills[5].cost) {
+      const towerCost = this.gameState.getSkillCost(this.gameState.skills[5]);
+      if (this.gameState.money < towerCost) {
         this.gameState.skillMessage = "Not enough money";
         this.gameState.skillMessageTimer = 2;
         return;
@@ -290,7 +295,8 @@ export class SkillHotbarHUD {
         ctx.font = 'bold 9px Arial';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(`$${skill.cost}`, x + this.buttonSize / 2, y + this.buttonSize / 2 + 10);
+        const displayCost = this.gameState.getSkillCost(skill);
+        ctx.fillText(`$${displayCost.toFixed ? displayCost.toFixed(0) : displayCost}`, x + this.buttonSize / 2, y + this.buttonSize / 2 + 10);
       } else {
         // Cooldown timer text centered and large (when on cooldown)
         ctx.fillStyle = '#ff4444';

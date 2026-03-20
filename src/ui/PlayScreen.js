@@ -1,5 +1,6 @@
 import { GameState } from "../core/GameState.js";
 import { FireControlModal } from "./FireControlModal.js";
+import { HelpTooltipsModal } from "./HelpTooltipsModal.js";
 import { SkillHotbarHUD } from "./SkillHotbarHUD.js";
 import { TopStatusHUD } from "./TopStatusHUD.js";
 
@@ -13,6 +14,7 @@ export class PlayScreen {
     this.gameState = null;
     this.gameMode = null;
     this.fireControlModal = null;
+    this.helpTooltipsModal = new HelpTooltipsModal();
     this.skillHotbarHUD = null;
     this.topStatusHUD = null;
     this.keys = {};
@@ -144,6 +146,7 @@ export class PlayScreen {
     }
     
     this.skillHotbarHUD?.render(ctx);
+    this.helpTooltipsModal?.render(ctx);
     
     // Display announcement overlay if active
     if (this.showingAnnouncement) {
@@ -163,18 +166,26 @@ export class PlayScreen {
     this.mouse.x = x;
     this.mouse.y = y;
 
+    // If help modal is open, route input to it first and consume on click
+    if (this.helpTooltipsModal?.isOpen) {
+      if (this.helpTooltipsModal.handlePointerDown(x, y)) {
+        return;
+      }
+      // keep allowing clicks to fall through when background is clicked
+    }
+
     // Check if click is on the skill hotbar HUD first
     if (this.skillHotbarHUD?.handlePointerDown(x, y)) {
       return;
     }
 
-    // If modal is expanded, route input to modal
+    // If fire control modal is expanded, route input to it
     if (this.fireControlModal?.isExpanded) {
       this.fireControlModal.handlePointerDown(x, y);
       return;
     }
 
-    // Always route to modal (for collapse/expand toggle on header)
+    // Always route to fire control modal (for collapse/expand toggle on header)
     this.fireControlModal?.handlePointerDown(x, y);
 
     // If mission is over and NOT a training ground, click returns to menu.
@@ -247,8 +258,13 @@ export class PlayScreen {
     const key = evt.key.toLowerCase();
     this.keys[key] = true;
 
-    // Don't allow other input while modal is open and expanded
+    // Don't allow other input while fire control modal is open and expanded
     if (this.fireControlModal?.isExpanded) {
+      return;
+    }
+
+    if (key === "i") {
+      this.helpTooltipsModal.toggle();
       return;
     }
 

@@ -78,6 +78,17 @@ export class TrainingGroundMode extends BaseMode {
   }
 
   /**
+   * Training mode provides unlimited free skill use.
+   */
+  getSkillCostMultiplier() {
+    return 0;
+  }
+
+  isSkillFree() {
+    return true;
+  }
+
+  /**
    * Check if wind should be randomized
    */
   shouldRandomizeWind() {
