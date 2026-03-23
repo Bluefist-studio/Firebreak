@@ -150,8 +150,9 @@ function resetEconomyForNewGame() {
   economyState.save();
 }
 
-// Debug console command: type grant() in browser console to add $50,000
+// Debug console commands
 window.grant = () => { economyState.money += 50000; return `Money: $${economyState.money.toLocaleString()}`; };
+window.resetSave = () => { EconomyState.deleteSave(); location.reload(); };
 
 const screenManager = new ScreenManager({
   screens: {

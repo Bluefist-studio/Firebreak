@@ -86,16 +86,10 @@ export class MainMenuScreen {
     const rects = {};
     const startX = groupCenterX; // groupCenterX is now the left edge
     
-    if (hasSave) {
-      // Three buttons: Continue | New Game | Settings
-      rects.continue = { x: startX,                              y: baseY, w: continueW, h };
-      rects.newGame  = { x: startX + continueW + gap,             y: baseY, w: newGameW,  h };
-      rects.settings = { x: startX + continueW + newGameW + gap * 2, y: baseY, w: settingsW, h };
-    } else {
-      // Two buttons: New Game | Settings
-      rects.newGame  = { x: startX,              y: baseY, w: newGameW,  h };
-      rects.settings = { x: startX + newGameW + gap, y: baseY, w: settingsW, h };
-    }
+    // Always show all 3 buttons — Continue starts new game if no save exists
+    rects.continue = { x: startX,                              y: baseY, w: continueW, h };
+    rects.newGame  = { x: startX + continueW + gap,             y: baseY, w: newGameW,  h };
+    rects.settings = { x: startX + continueW + newGameW + gap * 2, y: baseY, w: settingsW, h };
     return rects;
   }
 
@@ -131,9 +125,7 @@ export class MainMenuScreen {
     const layout = this._getLayout(ctx);
     const btns = this._getButtonRects(layout);
 
-    if (layout.hasSave) {
-      this._drawButton(ctx, btns.continue, "Continue", this.hoveredButton === "continue");
-    }
+    this._drawButton(ctx, btns.continue, "Continue", this.hoveredButton === "continue");
     this._drawButton(ctx, btns.newGame,  "New Game",  this.hoveredButton === "newGame");
     this._drawButton(ctx, btns.settings, "Settings",  this.hoveredButton === "settings");
 
@@ -231,8 +223,12 @@ export class MainMenuScreen {
     }
 
     const btns = this._getButtonRects(layout);
-    if (layout.hasSave && this._hit(x, y, btns.continue)) {
-      this.onNavigate?.("base");
+    if (this._hit(x, y, btns.continue)) {
+      if (layout.hasSave) {
+        this.onNavigate?.("base");
+      } else {
+        this.onNewGame?.();
+      }
     } else if (this._hit(x, y, btns.newGame)) {
       if (layout.hasSave) {
         this.showConfirm = true;
@@ -261,7 +257,7 @@ export class MainMenuScreen {
     }
 
     const btns = this._getButtonRects(layout);
-    if (layout.hasSave && this._hit(x, y, btns.continue)) {
+    if (this._hit(x, y, btns.continue)) {
       this.hoveredButton = "continue";
     } else if (this._hit(x, y, btns.newGame)) {
       this.hoveredButton = "newGame";
