@@ -22,11 +22,15 @@ export class RegionMapScreen {
     }
 
 
+    const width = ctx.canvas.width;
+    const height = ctx.canvas.height;
+    const scale = Math.min(width / 1280, height / 720, 2);
+
     // Back button
-    const backX = 20;
-    const backY = 20;
-    const backW = 110;
-    const backH = 38;
+    const backX = Math.round(20 * scale);
+    const backY = Math.round(20 * scale);
+    const backW = Math.max(80, Math.round(110 * scale));
+    const backH = Math.max(28, Math.round(38 * scale));
     const backHovered = this.isBackHover;
 
     ctx.save();
@@ -46,8 +50,8 @@ export class RegionMapScreen {
     ctx.textBaseline = "middle";
     ctx.fillText("Back", backX + backW / 2, backY + backH / 2);
 
-    const startY = 200;
-    const itemHeight = 70;
+    const startY = Math.round(height * 0.25);
+    const itemHeight = Math.max(56, Math.round(70 * scale));
 
     const drawListItem = (x, y, w, h, label, description, isSelected, isHovered) => {
       const glowOpacity = isHovered ? 0.55 : 0.3;
@@ -85,8 +89,8 @@ export class RegionMapScreen {
       ctx.fillText(description, x + 20, y + 50);
     };
 
-    const itemX = 200;
-    const itemWidth = ctx.canvas.width - 400;
+    const itemX = Math.round(Math.max(40, 200 * scale));
+    const itemWidth = Math.round(width - itemX * 2);
 
     this.missions.forEach((mission, idx) => {
       const y = startY + idx * (itemHeight + 8);
@@ -100,23 +104,27 @@ export class RegionMapScreen {
   handlePointerDown(x, y, evt) {
     const canvas = evt?.target;
     const width = canvas?.width ?? 1280;
+    const height = canvas?.height ?? 720;
+    const scale = Math.min(width / 1280, height / 720, 2);
 
     // Back button bounds
-    const backX = 20;
-    const backY = 20;
-    const backW = 110;
-    const backH = 38;
+    const backX = Math.round(20 * scale);
+    const backY = Math.round(20 * scale);
+    const backW = Math.max(80, Math.round(110 * scale));
+    const backH = Math.max(28, Math.round(38 * scale));
     if (x >= backX && x <= backX + backW && y >= backY && y <= backY + backH) {
       this.onBack?.();
       return;
     }
 
-    const startY = 200;
-    const itemHeight = 70;
+    const startY = Math.round(height * 0.25);
+    const itemHeight = Math.max(56, Math.round(70 * scale));
+    const itemX = Math.round(Math.max(40, 200 * scale));
+    const itemEndX = width - itemX;
 
     this.missions.forEach((mission, idx) => {
-      const itemY = startY + idx * (itemHeight + 8);
-      if (x >= 200 && x <= width - 200 && y >= itemY && y <= itemY + itemHeight) {
+      const itemY = startY + idx * (itemHeight + Math.round(8 * scale));
+      if (x >= itemX && x <= itemEndX && y >= itemY && y <= itemY + itemHeight) {
         this.selectedIndex = idx;
         this.onSelectMission?.(mission);
       }
@@ -126,21 +134,25 @@ export class RegionMapScreen {
   handlePointerMove(x, y, evt) {
     const canvas = evt?.target;
     const width = canvas?.width ?? 1280;
+    const height = canvas?.height ?? 720;
+    const scale = Math.min(width / 1280, height / 720, 2);
 
-    // Back button bounds
-    const backX = 20;
-    const backY = 20;
-    const backW = 110;
-    const backH = 38;
+    // Back button bounds (scaled)
+    const backX = Math.round(20 * scale);
+    const backY = Math.round(20 * scale);
+    const backW = Math.max(80, Math.round(110 * scale));
+    const backH = Math.max(28, Math.round(38 * scale));
     this.isBackHover = x >= backX && x <= backX + backW && y >= backY && y <= backY + backH;
 
-    const startY = 200;
-    const itemHeight = 70;
+    const startY = Math.round(height * 0.25);
+    const itemHeight = Math.max(56, Math.round(70 * scale));
+    const itemX = Math.round(Math.max(40, 200 * scale));
+    const itemEndX = width - itemX;
 
     let foundIndex = -1;
     this.missions.forEach((_, idx) => {
-      const itemY = startY + idx * (itemHeight + 8);
-      if (x >= 200 && x <= width - 200 && y >= itemY && y <= itemY + itemHeight) {
+      const itemY = startY + idx * (itemHeight + Math.round(8 * scale));
+      if (x >= itemX && x <= itemEndX && y >= itemY && y <= itemY + itemHeight) {
         foundIndex = idx;
       }
     });

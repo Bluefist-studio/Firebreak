@@ -17,10 +17,11 @@ export class MainMenuScreen {
       ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     }
 
-    const w = 260;
-    const h = 60;
+    const scale = Math.min(ctx.canvas.width / 1280, ctx.canvas.height / 720, 2);
+    const w = Math.max(180, Math.round(260 * scale));
+    const h = Math.max(40, Math.round(60 * scale));
     const x = ctx.canvas.width / 2 - w / 2;
-    const y = 240;
+    const y = Math.round(ctx.canvas.height * 0.25);
 
     const isHovered = this.isPlayHover;
 
@@ -60,27 +61,33 @@ export class MainMenuScreen {
 
   handlePointerDown(x, y, evt) {
     const canvas = evt?.target;
-    const w = 260;
-    const h = 60;
-    const bx = (canvas?.width ?? 1280) / 2 - w / 2;
-    const by = 240;
+    const width = canvas?.width ?? 1280;
+    const height = canvas?.height ?? 720;
+    const scale = Math.min(width / 1280, height / 720, 2);
+    const w = Math.max(180, Math.round(260 * scale));
+    const h = Math.max(40, Math.round(60 * scale));
+    const bx = width / 2 - w / 2;
+    const by = Math.round(height * 0.25);
     if (x >= bx && x <= bx + w && y >= by && y <= by + h) {
-      this.onNavigate?.("region");
+      this.onNavigate?.("base");
     }
   }
 
   handlePointerMove(x, y, evt) {
     const canvas = evt?.target;
-    const w = 260;
-    const h = 60;
-    const bx = (canvas?.width ?? 1280) / 2 - w / 2;
-    const by = 240;
+    const width = canvas?.width ?? 1280;
+    const height = canvas?.height ?? 720;
+    const scale = Math.min(width / 1280, height / 720, 2);
+    const w = Math.max(180, Math.round(260 * scale));
+    const h = Math.max(40, Math.round(60 * scale));
+    const bx = width / 2 - w / 2;
+    const by = Math.round(height * 0.25);
     this.isPlayHover = x >= bx && x <= bx + w && y >= by && y <= by + h;
   }
 
   handleKeyDown(evt) {
     if (evt.key === "Enter") {
-      this.onNavigate?.("region");
+      this.onNavigate?.("base");
     }
   }
 }

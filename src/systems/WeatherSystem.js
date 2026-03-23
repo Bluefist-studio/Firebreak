@@ -8,7 +8,15 @@ export class WeatherSystem {
   }
 
   update(dt) {
-    // placeholder for future dynamics (day/night cycles, storms, etc.)
+    // Wind gradually increases over mission duration (+0.1 per 10 minutes)
+    this._elapsed = (this._elapsed || 0) + dt;
+    const windIncrease = Math.floor(this._elapsed / 600) * 0.1;
+    this.windStrength = this._baseWindStrength + windIncrease;
+  }
+
+  resetTimer() {
+    this._elapsed = 0;
+    this._baseWindStrength = this.windStrength;
   }
 
   computeSpreadModifier(source, target) {

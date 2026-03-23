@@ -3,11 +3,15 @@ import { WeatherSystem } from "../systems/WeatherSystem.js";
 import { FireSpreadSystem } from "../systems/FireSpreadSystem.js";
 
 export class GameState {
-  constructor({ mission, gameMode = null, viewport = { width: 1280, height: 720 }, sprites = null }) {
+  constructor({ mission, gameMode = null, viewport = { width: 1280, height: 720 }, sprites = null, economyState = null }) {
     this.mission = mission;
     this.gameMode = gameMode;
     this.viewport = viewport;
     this.sprites = sprites;
+    this.economyState = economyState;
+    this.foodWearAccumulated = 0; // Track food wear during mission (resolved between missions)
+    this.fuelConsumed = 0; // Track total fuel consumed during mission
+    this.retardantConsumed = 0; // Track total retardant consumed during mission
     this.bomberSprite = sprites?.bomber || null;
     this.heloSprite = sprites?.helo || null;
     this.bulldozerSprite = sprites?.bulldozer || null;
@@ -31,19 +35,25 @@ export class GameState {
 
     this.fire = new FireSpreadSystem({ forest: this.forest, weather: this.weather });
 
-    this.camera = { x: 0, y: 0, zoom: 1.25 };
+    this.minZoom = mission.minZoom ?? 1.75;
+    this.maxZoom = mission.maxZoom ?? 1.75;
+    this.camera = { x: 0, y: 0, zoom: mission.startZoom ?? 1.75};
     this.player = { x: this.camera.x + 400, y: this.camera.y + 300 };
 
     this.money = mission.startMoney;
     this.saved = 0;
 
-    // Skill system (activated with number keys 1-5 + click)
+    // Skill system (activated with number keys 1-9 + click)
     this.skills = {
       1: { id: "waterBomber", name: "Water Bomber", cost: 100, radius: 220 },
       2: { id: "bulldozer", name: "Bulldozer", cost: 40, radius: 180 },
       3: { id: "heliDrop", name: "Heli Drop", cost: 50, radius: 260 },
-      4: { id: "workerCrew", name: "Worker Crew", cost: 50, radius: 140 },
-      5: { id: "watchTower", name: "Watch Tower", cost: 20, radius: 320 },
+      4: { id: "sprinklerTrailer", name: "Sprinkler Trailer", cost: 0, radius: 140 },
+      5: { id: "fireWatch", name: "Fire Watch", cost: 20, radius: 320 },
+      6: { id: "fireCrew", name: "Fire Crew", cost: 0, radius: 96 },
+      7: { id: "droneRecon", name: "Drone Recon", cost: 0, radius: 280 },
+      8: { id: "engineTruck", name: "Fire Truck", cost: 0, radius: 60 },
+      9: { id: "reconPlane", name: "Recon Plane", cost: 2000, radius: 600 },
     };
     this.selectedSkillKey = null;
     this.skillMessage = "";
@@ -55,8 +65,12 @@ export class GameState {
     this.watchTowerMouseY = 0;
     this.watchTowerZones = []; // Array of { x, y, radius }
     this.watchTowerCooldown = 0;
-    this.watchTowerCooldownDuration = 10; // 10 second cooldown
+    this.watchTowerCooldownDuration = 10; // 10 second recharge per charge
+    this.watchTowerCharges = 1;
+    this.watchTowerMaxCharges = 1;
+    this.watchTowerRechargeTimer = 0;
     this.waterBomberMode = null; // null, "selectStart", "selectEnd"
+    this.waterBomberUseRetardant = false; // water vs retardant toggle
     this.waterBomberStart = null;
     this.waterBomberPreview = null;
     this.waterBomberStrafing = false;
@@ -68,18 +82,19 @@ export class GameState {
     this.waterBomberCooldown = 0; // Cooldown timer
     this.waterBomberCooldownDuration = 8; // 8 second cooldown between uses
 
-    // Bulldozer skill (key 2) - faster cutting with energy system
+    // Bulldozer skill (key 2) - faster cutting, fuel-based + energy system
     this.bulldozerActive = false;
-    this.bulldozerEnergy = 100; // 0-100
-    this.bulldozerMaxEnergy = 100;
-    this.bulldozerRechargeRate = 5; // energy per second when not active
-    this.bulldozerDrainRate = 25; // energy per second when active (slower drain)
     this.bulldozerCutTime = 0.2; // reduced cut time from 0.9 to 0.2
     this.bulldozerMouseX = 0;
     this.bulldozerMouseY = 0;
+    this.bulldozerEnergy = 100;
+    this.bulldozerMaxEnergy = 100;
+    this.bulldozerRechargeRate = 5; // energy per second when inactive
+    this.bulldozerDrainRate = 25; // energy per second when active
 
     // Heli Drop skill (key 3) - circle suppression with cooldown
     this.heliDropMode = false; // targeting mode
+    this.heliDropUseRetardant = false; // water vs retardant toggle
     this.heliDropRadius = 43; // 1.8 * player spray radius (24)
     this.heliDropCooldown = 0;
     this.heliDropCooldownDuration = 4; // 4 second cooldown
@@ -91,6 +106,57 @@ export class GameState {
     this.workerCrewCooldown = 0;
     this.workerCrewCooldownDuration = 12; // 12 second cooldown
     this.workerCrewZone = null; // { x, y, startTime, duration }
+
+    // Fire Crew skill (key 6) - place a crew that actively cuts firebreaks (line-based)
+    this.fireCrewMode = null; // null, "selectStart", "selectEnd"
+    this.fireCrewStart = null;
+    this.fireCrewPreview = null;
+    this.fireCrewLines = []; // Array of { startX, startY, endX, endY, progress, cutPoints, startTime }
+    this.fireCrewCooldown = 0;
+    this.fireCrewCooldownDuration = 2;
+    this.fireCrewCharges = 1;
+    this.fireCrewMaxCharges = 1;
+    this.fireCrewRechargeTimer = 0;
+    this.fireCrewDeferredCount = 0; // number of charges waiting on crew completion before cooldown starts
+    this.fireCrewMaxLength = 150; // max firebreak length in world pixels
+    this.fireCrewCutThreshold = 8.0; // seconds per tree (much slower than hand tool's 0.9)
+    this.fireCrewLineWidth = 32; // width of firebreak
+    this.fireCrewSpeed = 14; // pixels per second the crew front advances along the line
+
+    // Drone Recon skill (key 7) - movable timed intel reveal (smaller than Fire Watch)
+    this.droneReconMode = false;
+    this.droneReconMouseX = 0;
+    this.droneReconMouseY = 0;
+    this.droneReconActive = []; // Array of { x, y, targetX, targetY, radius, startTime }
+    this.droneReconCooldown = 0;
+    this.droneReconCooldownDuration = 10;
+    this.droneReconCharges = 1;
+    this.droneReconMaxCharges = 1;
+    this.droneReconRechargeTimer = 0;
+    this.droneReconDuration = 45; // seconds before drone expires
+    this.droneReconRadius = 200; // smaller than Fire Watch's 320
+    this.droneReconMoveSpeed = 120; // pixels per second when repositioning
+    this.droneReconMoving = false; // true when player clicked on drone and is choosing new location
+
+    // Engine Truck skill (key 8) - small area suppression zone
+    this.engineTruckMode = false;
+    this.engineTruckMouseX = 0;
+    this.engineTruckMouseY = 0;
+    this.engineTruckZone = null; // { x, y, radius, startTime, duration }
+    this.engineTruckCooldown = 0;
+    this.engineTruckCooldownDuration = 5; // quick cooldown
+    this.engineTruckDuration = 6; // seconds active
+    this.engineTruckRadius = 25; // very small area
+
+    // Recon Plane skill (key 9) - large area intel reveal
+    this.reconPlaneMode = false;
+    this.reconPlaneMouseX = 0;
+    this.reconPlaneMouseY = 0;
+    this.reconPlaneZones = []; // Array of { x, y, radius, startTime, duration }
+    this.reconPlaneCooldown = 0;
+    this.reconPlaneCooldownDuration = 20;
+    this.reconPlaneDuration = 25;
+    this.reconPlaneRadius = 600;
 
     // Debug/Visual toggles
     this.showDebugInfo = false; // Toggle with 'B' key
@@ -108,8 +174,24 @@ export class GameState {
     this.over = false;
     this.timeSinceStart = 0;
 
+    // Apply crew charge upgrades
+    let crewMaxCharges = 1;
+    if (this._hasUpgrade("crewAvail1")) crewMaxCharges++;
+    if (this._hasUpgrade("crewAvail2")) crewMaxCharges++;
+    this.watchTowerMaxCharges = crewMaxCharges;
+    this.watchTowerCharges = crewMaxCharges;
+    this.watchTowerMaxActive = crewMaxCharges; // max active towers on map
+    this.fireCrewMaxCharges = crewMaxCharges;
+    this.fireCrewCharges = crewMaxCharges;
+    this.droneReconMaxCharges = crewMaxCharges;
+    this.droneReconCharges = crewMaxCharges;
+    this.droneReconActive = [];
+    this.droneReconMoving = false;
+    this._selectedDrone = null;
+
     this.forest.generate();
     this.fire.reset();
+    this.weather.resetTimer();
 
     // Use game mode's fire initialization if available, otherwise fall back to default
     if (this.gameMode && typeof this.gameMode.initializeFires === "function") {
@@ -124,6 +206,7 @@ export class GameState {
       this.forest.igniteRandom(1);
     }
 
+    // Do not adjust camera zoom at start: keep current starting zoom (from constructor/default)
     // Center the camera on the play area
     const worldCenterX = this.forest.width / 2;
     const worldCenterY = this.forest.height / 2;
@@ -147,8 +230,8 @@ export class GameState {
     
     // Pass fire build-up info to fire spread system
     this.fire.fireBuildup = this.fireBuildup;
-    // Count both burning and burnt trees for buildup threshold
-    this.fire.currentBurntCount = this.forest.burningCount + this.forest.burntCount;
+    // Use historical unique burned tree count (never decreases on suppression)
+    this.fire.currentBurntCount = this.forest.everBurnedCount;
     
     this.fire.update(dt);
     this._applyPlayerActions(dt);
@@ -199,7 +282,7 @@ export class GameState {
       // Spray at 0.5 seconds (after fade in)
       if (anim.time >= 0.5 && !anim.sprayed) {
         anim.sprayed = true;
-        this._applyHeliDropSuppression(anim.x, anim.y);
+        this._applyHeliDropSuppression(anim.x, anim.y, anim.usedRetardant);
       }
       
       // Remove when animation complete (3 seconds)
@@ -213,9 +296,193 @@ export class GameState {
       this.workerCrewCooldown -= dt;
     }
 
-    // Decrease watch tower cooldown
-    if (this.watchTowerCooldown > 0) {
-      this.watchTowerCooldown -= dt;
+    // Recharge watch tower charges
+    if (this.watchTowerCharges < this.watchTowerMaxCharges) {
+      this.watchTowerRechargeTimer -= dt;
+      if (this.watchTowerRechargeTimer <= 0) {
+        this.watchTowerCharges++;
+        if (this.watchTowerCharges < this.watchTowerMaxCharges) {
+          this.watchTowerRechargeTimer = this._getCrewRechargeTime("fireWatch");
+        } else {
+          this.watchTowerRechargeTimer = 0;
+        }
+      }
+    }
+    // Mirror for HUD display
+    this.watchTowerCooldown = this.watchTowerCharges > 0 ? 0 : this.watchTowerRechargeTimer;
+
+    // Recharge fire crew charges — cooldown starts only after crew finishes its line
+    // When a line completes, convert deferred charges into active cooldown slots
+    if (this.fireCrewDeferredCount > 0 && this.fireCrewLines.length < this.fireCrewDeferredCount) {
+      this.fireCrewDeferredCount = this.fireCrewLines.length;
+      // Start the recharge timer if not already counting down
+      if (this.fireCrewRechargeTimer <= 0) {
+        this.fireCrewRechargeTimer = this._getCrewRechargeTime("fireCrew");
+      }
+    }
+    // Count non-deferred empty slots that need recharging
+    const fireCrewEmptySlots = this.fireCrewMaxCharges - this.fireCrewCharges - this.fireCrewDeferredCount;
+    if (fireCrewEmptySlots > 0) {
+      this.fireCrewRechargeTimer -= dt;
+      if (this.fireCrewRechargeTimer <= 0) {
+        this.fireCrewCharges++;
+        const remainingEmpty = this.fireCrewMaxCharges - this.fireCrewCharges - this.fireCrewDeferredCount;
+        if (remainingEmpty > 0) {
+          this.fireCrewRechargeTimer = this._getCrewRechargeTime("fireCrew");
+        } else {
+          this.fireCrewRechargeTimer = 0;
+        }
+      }
+    }
+    // Mirror for HUD display: 0 = ready, -1 = all deferred (working), >0 = timer counting down
+    this.fireCrewCooldown = this.fireCrewCharges > 0 ? 0 : (fireCrewEmptySlots > 0 ? this.fireCrewRechargeTimer : -1);
+
+    // Update fire crew lines — progressively cut trees front-to-back
+    if (!Array.isArray(this.fireCrewLines)) this.fireCrewLines = [];
+    for (let i = this.fireCrewLines.length - 1; i >= 0; i--) {
+      const line = this.fireCrewLines[i];
+      const lineDx = line.endX - line.startX;
+      const lineDy = line.endY - line.startY;
+      const lineLen = Math.sqrt(lineDx * lineDx + lineDy * lineDy);
+      if (lineLen === 0) { this.fireCrewLines.splice(i, 1); continue; }
+
+      // Advance crew front along the line (fasterCutting upgrade boosts speed)
+      const crewSpeed = this.fireCrewSpeed * (this._hasUpgrade("fasterCutting") ? 1.4 : 1);
+      line.crewProgress = (line.crewProgress || 0) + crewSpeed * dt;
+
+      // Query all trees within the line's bounding area
+      const cx = (line.startX + line.endX) / 2;
+      const cy = (line.startY + line.endY) / 2;
+      const queryRadius = lineLen / 2 + this.fireCrewLineWidth;
+      const candidates = this.forest.grid.queryCircle(cx, cy, queryRadius);
+
+      // Filter to trees within the line's width and crew reach
+      const halfW = this.fireCrewLineWidth / 2;
+      const dirX = lineDx / lineLen;
+      const dirY = lineDy / lineLen;
+
+      let cuttingLeft = false;
+      for (const tree of candidates) {
+        if (tree.state === "burnt") continue;
+        // Project tree onto line — must be within cutting corridor
+        const tx = tree.x - line.startX;
+        const ty = tree.y - line.startY;
+        const along = tx * dirX + ty * dirY;
+        if (along < -halfW || along > lineLen + halfW) continue;
+        const perp = Math.abs(tx * (-dirY) + ty * dirX);
+        if (perp > halfW) continue;
+
+        // Only process trees that the crew front has reached
+        if (along > line.crewProgress) {
+          cuttingLeft = true;
+          continue;
+        }
+
+        const cutThreshold = this.fireCrewCutThreshold * (this._hasUpgrade("fasterCutting") ? 0.7 : 1);
+
+        // Suppress burning trees within the corridor (same timing as cutting)
+        // Burning trees do NOT block line completion — fires may re-spread into corridor
+        if (tree.state === "burning") {
+          tree.fireCrewCutTimer = (tree.fireCrewCutTimer || 0) + dt;
+          if (tree.fireCrewCutTimer >= cutThreshold) {
+            this.forest.setState(tree, "wet");
+            tree.fireCrewCutTimer = 0;
+          }
+          continue;
+        }
+
+        // This tree is within crew reach — increment its cutTimer
+        tree.fireCrewCutTimer = (tree.fireCrewCutTimer || 0) + dt;
+        if (tree.fireCrewCutTimer >= cutThreshold) {
+          this.forest.setState(tree, "burnt");
+          tree.fireCrewCutTimer = 0;
+        } else {
+          cuttingLeft = true;
+        }
+      }
+
+      // Remove line when crew has passed the end AND all normal trees are cut.
+      // Burning trees don't block — they may re-spread into the corridor indefinitely.
+      if (line.crewProgress >= lineLen && !cuttingLeft) {
+        this.fireCrewLines.splice(i, 1);
+      }
+    }
+
+    // Recharge drone recon charges
+    if (this.droneReconCharges < this.droneReconMaxCharges) {
+      this.droneReconRechargeTimer -= dt;
+      if (this.droneReconRechargeTimer <= 0) {
+        this.droneReconCharges++;
+        if (this.droneReconCharges < this.droneReconMaxCharges) {
+          this.droneReconRechargeTimer = this._getCrewRechargeTime("droneRecon");
+        } else {
+          this.droneReconRechargeTimer = 0;
+        }
+      }
+    }
+    // Mirror for HUD display
+    this.droneReconCooldown = this.droneReconCharges > 0 ? 0 : this.droneReconRechargeTimer;
+
+    // Update drone recon — animate movement toward target + expire after duration
+    const droneMoveSpeed = this.droneReconMoveSpeed * (this._hasUpgrade("droneControl") ? 1.5 : 1);
+    let droneDur = this.droneReconDuration;
+    if (this._hasUpgrade("droneDuration1")) droneDur += 15;
+    if (this._hasUpgrade("droneDuration2")) droneDur += 15;
+    for (let di = this.droneReconActive.length - 1; di >= 0; di--) {
+      const d = this.droneReconActive[di];
+      const dx = d.targetX - d.x;
+      const dy = d.targetY - d.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > 1) {
+        const step = Math.min(droneMoveSpeed * dt, dist);
+        d.x += (dx / dist) * step;
+        d.y += (dy / dist) * step;
+      } else {
+        d.x = d.targetX;
+        d.y = d.targetY;
+      }
+      const elapsed = this.timeSinceStart - d.startTime;
+      if (elapsed >= droneDur) {
+        this.droneReconActive.splice(di, 1);
+        if (this.droneReconActive.length === 0) this.droneReconMoving = false;
+        this._setSkillMessage("Drone Recon expired");
+      }
+    }
+
+    // Decrease engine truck cooldown
+    if (this.engineTruckCooldown > 0) {
+      this.engineTruckCooldown -= dt;
+    }
+
+    // Update engine truck zone — keeps normal trees wet (suppressed) while active
+    if (this.engineTruckZone) {
+      const elapsed = this.timeSinceStart - this.engineTruckZone.startTime;
+      if (elapsed >= this.engineTruckZone.duration) {
+        this.engineTruckZone = null;
+      } else {
+        const targets = this.forest.grid.queryCircle(
+          this.engineTruckZone.x, this.engineTruckZone.y, this.engineTruckZone.radius
+        );
+        for (const tree of targets) {
+          if (tree.state !== "wet" && tree.state !== "burnt") {
+            this.forest.setState(tree, "wet");
+          }
+        }
+      }
+    }
+
+    // Decrease recon plane cooldown
+    if (this.reconPlaneCooldown > 0) {
+      this.reconPlaneCooldown -= dt;
+    }
+
+    // Update recon plane zones — expire after duration
+    for (let i = this.reconPlaneZones.length - 1; i >= 0; i--) {
+      const zone = this.reconPlaneZones[i];
+      const elapsed = this.timeSinceStart - zone.startTime;
+      if (elapsed >= zone.duration) {
+        this.reconPlaneZones.splice(i, 1);
+      }
     }
 
     // Update worker crew zone humidity effect
@@ -227,18 +494,46 @@ export class GameState {
       // Local humidity effect is applied during fire spread in FireSpreadSystem
     }
 
-    // Bulldozer energy management - only drain when active AND clicking
-    if (this.bulldozerActive && this.player?.left && this.bulldozerEnergy > 0) {
-      this.bulldozerEnergy -= this.bulldozerDrainRate * dt;
+    // Bulldozer energy + fuel + wear management
+    if (this.bulldozerActive && this.player?.left) {
+      // Drain energy while active and clicking
+      this.bulldozerEnergy = Math.max(0, this.bulldozerEnergy - this.bulldozerDrainRate * dt);
       if (this.bulldozerEnergy <= 0) {
-        this.bulldozerEnergy = 0;
         this.bulldozerActive = false;
+        this._setSkillMessage("Bulldozer overheated — wait for recharge");
       }
-    } else if (this.bulldozerEnergy < this.bulldozerMaxEnergy) {
-      // Recharge when not actively using (not clicking) or when inactive
-      this.bulldozerEnergy += this.bulldozerRechargeRate * dt;
-      if (this.bulldozerEnergy > this.bulldozerMaxEnergy) {
-        this.bulldozerEnergy = this.bulldozerMaxEnergy;
+      // Economy: bulldozer fuel + durability wear per second
+      if (this.economyState && !this.isSkillFree()) {
+        // vehicleFuelEff upgrades slow fuel timer (base interval reduced to 1s for higher cost)
+        const fuelInterval = this._hasUpgrade("vehicleFuelEff1") ? (this._hasUpgrade("vehicleFuelEff2") ? 1.6 : 1.3) : 1;
+        this._bulldozerFuelTimer = (this._bulldozerFuelTimer ?? 0) + dt;
+        this._bulldozerWearTimer = (this._bulldozerWearTimer ?? 0) + dt;
+        // Fuel consumption (base 1 per 1 second, slowed by efficiency upgrades)
+        if (this._bulldozerFuelTimer >= fuelInterval) {
+          this._bulldozerFuelTimer -= fuelInterval;
+          if (this.economyState.fuel > 0) {
+            this.economyState.fuel -= 1;
+            this.fuelConsumed += 1;
+          } else {
+            this.bulldozerActive = false;
+            this._setSkillMessage("Bulldozer out of fuel");
+          }
+        }
+        // Durability wear (base 3 per 2 sec, vehicleWear upgrades extend interval)
+        const wearInterval = 2 * (this._hasUpgrade("vehicleWear1") ? 1.3 : 1) * (this._hasUpgrade("vehicleWear2") ? 1.3 : 1);
+        if (this._bulldozerWearTimer >= wearInterval) {
+          this._bulldozerWearTimer -= wearInterval;
+          this.economyState.assetDurability.bulldozer = Math.max(0, this.economyState.assetDurability.bulldozer - 3);
+          if (this.economyState.assetDurability.bulldozer <= 0) {
+            this.bulldozerActive = false;
+            this._setSkillMessage("Bulldozer broken — repair at base");
+          }
+        }
+      }
+    } else {
+      // Recharge energy when not active or not clicking
+      if (this.bulldozerEnergy < this.bulldozerMaxEnergy) {
+        this.bulldozerEnergy = Math.min(this.bulldozerMaxEnergy, this.bulldozerEnergy + this.bulldozerRechargeRate * dt);
       }
     }
 
@@ -330,7 +625,12 @@ export class GameState {
     if (this.workerCrewMode) {
       this._drawWorkerCrewOverlay(ctx);
     }
-
+    // Draw fire crew line preview
+    if (this.fireCrewMode) {
+      this._drawFireCrewOverlay(ctx);
+    }
+    // Draw active fire crew lines
+    this._drawFireCrewLines(ctx);
     // Draw active worker crew zone effect
     if (this.workerCrewZone) {
       this._drawWorkerCrewZone(ctx);
@@ -341,6 +641,36 @@ export class GameState {
       this._drawWatchTowerZone(ctx, zone);
     }
 
+    // Draw active drone recon zones
+    for (const drone of this.droneReconActive) {
+      this._drawDroneReconZone(ctx, drone);
+    }
+
+    // Draw drone recon targeting overlay (deploy or reposition)
+    if (this.droneReconMode || this.droneReconMoving) {
+      this._drawDroneReconOverlay(ctx);
+    }
+
+    // Draw active engine truck zone
+    if (this.engineTruckZone) {
+      this._drawEngineTruckZone(ctx);
+    }
+
+    // Draw engine truck targeting overlay
+    if (this.engineTruckMode) {
+      this._drawEngineTruckOverlay(ctx);
+    }
+
+    // Draw active recon plane zones
+    for (const zone of this.reconPlaneZones) {
+      this._drawReconPlaneZone(ctx, zone);
+    }
+
+    // Draw recon plane targeting overlay
+    if (this.reconPlaneMode) {
+      this._drawReconPlaneOverlay(ctx);
+    }
+
     // Draw watch tower targeting circle
     if (this.watchTowerMode) {
       this._drawWatchTowerOverlay(ctx);
@@ -348,6 +678,9 @@ export class GameState {
 
     // Draw wind direction spread visualization on burning trees
     this._drawWindSpreadVisualization(ctx);
+
+    // Draw low resource warnings at cursor when a skill is targeting
+    this._drawCursorResourceWarning(ctx);
 
     ctx.restore();
 
@@ -392,7 +725,37 @@ export class GameState {
       const selectedSkill = this.selectedSkillKey ? this.skills[this.selectedSkillKey] : null;
       ctx.fillText(`Selected: ${selectedSkill ? selectedSkill.name : "None"}`, 12, 225);
       if (this.skillMessage) {
-        ctx.fillStyle = this.waterBomberMode ? "#f99" : "#ffb";
+        const isWarning = this.skillMessage.includes("Warning:");
+        if (isWarning) {
+          // Extract warning text and draw as prominent banner
+          const warnMatch = this.skillMessage.match(/Warning:\s*(.*)/);
+          const warnText = warnMatch ? warnMatch[1] : this.skillMessage;
+          // Pulsing red-orange banner near center-top
+          const pulse = 0.7 + 0.3 * Math.sin(performance.now() / 250);
+          const bannerW = ctx.canvas.width * 0.4;
+          const bannerH = 36;
+          const bannerX = (ctx.canvas.width - bannerW) / 2;
+          const bannerY = 60;
+          ctx.fillStyle = `rgba(180, 40, 0, ${0.85 * pulse})`;
+          ctx.beginPath();
+          ctx.roundRect(bannerX, bannerY, bannerW, bannerH, 8);
+          ctx.fill();
+          ctx.strokeStyle = `rgba(255, 100, 0, ${pulse})`;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.roundRect(bannerX, bannerY, bannerW, bannerH, 8);
+          ctx.stroke();
+          ctx.fillStyle = "#ffffff";
+          ctx.font = "bold 18px Arial";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(`⚠ ${warnText}`, bannerX + bannerW / 2, bannerY + bannerH / 2);
+          ctx.textAlign = "left";
+          ctx.textBaseline = "alphabetic";
+        }
+        // Also still show the skill mode text
+        ctx.fillStyle = isWarning ? "#ff4400" : this.waterBomberMode ? "#f99" : "#ffb";
+        ctx.font = isWarning ? "bold 16px Arial" : "14px Arial";
         ctx.fillText(this.skillMessage, 12, 245);
       }
       
@@ -408,29 +771,10 @@ export class GameState {
         ctx.fillText(`[1] Ready in: ${this.waterBomberCooldown.toFixed(1)}s`, 12, 275);
       }
       
-      // Bulldozer energy bar
+      // Bulldozer status
       ctx.font = "13px Arial";
       ctx.fillStyle = this.bulldozerActive ? "rgba(255, 200, 100, 1)" : "rgba(200, 150, 100, 0.7)";
-      ctx.fillText(`[2] Bulldozer ${this.bulldozerActive ? "ACTIVE" : "Ready"} - Energy:`, 12, 290);
-      
-      // Energy bar background
-      const barX = 12;
-      const barY = 305;
-      const barWidth = 150;
-      const barHeight = 12;
-      ctx.fillStyle = "rgba(50, 50, 50, 0.8)";
-      ctx.fillRect(barX, barY, barWidth, barHeight);
-      
-      // Energy bar fill
-      const energyPercent = this.bulldozerEnergy / this.bulldozerMaxEnergy;
-      const fillColor = energyPercent > 0.3 ? "rgba(255, 200, 100, 0.8)" : "rgba(255, 100, 100, 0.8)";
-      ctx.fillStyle = fillColor;
-      ctx.fillRect(barX, barY, barWidth * energyPercent, barHeight);
-      
-      // Energy bar border
-      ctx.strokeStyle = "rgba(255, 200, 100, 0.5)";
-      ctx.lineWidth = 1;
-      ctx.strokeRect(barX, barY, barWidth, barHeight);
+      ctx.fillText(`[2] Bulldozer ${this.bulldozerActive ? "ACTIVE" : "Ready"}`, 12, 290);
       
       // Heli Drop cooldown display
       if (this.heliDropCooldown > 0) {
@@ -468,7 +812,7 @@ export class GameState {
 
     // Draw bulldozer sprite at cursor when active
     if (this.bulldozerActive && this.bulldozerSprite && this.bulldozerSprite.complete) {
-      const bulldozerSize = 40; // Size to draw the sprite
+      const bulldozerSize = 52; // Increased size to make the dozer more visible
       ctx.save();
       ctx.globalAlpha = 0.8;
       ctx.drawImage(
@@ -500,14 +844,7 @@ export class GameState {
     }
 
     if (this.over) {
-      ctx.fillStyle = "rgba(0,0,0,0.75)";
-      ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-      ctx.fillStyle = "white";
-      ctx.font = "24px Arial";
-      ctx.textAlign = "center";
-      ctx.fillText("Fire controlled!", ctx.canvas.width / 2, ctx.canvas.height / 2 - 20);
-      ctx.fillText(`Trees saved: ${this.saved}`, ctx.canvas.width / 2, ctx.canvas.height / 2 + 20);
-      ctx.textAlign = "left";
+      // Game over rendering is handled by LevelCompleteScreen
     }
 
     this._drawActionFeedback(ctx);
@@ -610,6 +947,140 @@ export class GameState {
       return;
     }
 
+    // Fire Crew line targeting (two-step like bomber)
+    if (this.fireCrewMode === "selectStart" && evt?.button === 0) {
+      this.fireCrewStart = { x: worldX, y: worldY };
+      this.fireCrewMode = "selectEnd";
+      this._setSkillMessage("Click end point for firebreak");
+      return;
+    }
+    if (this.fireCrewMode === "selectEnd" && evt?.button === 0) {
+      // Clamp end point to max distance if desired (optional)
+      const dx = worldX - this.fireCrewStart.x;
+      const dy = worldY - this.fireCrewStart.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const maxDist = this.fireCrewMaxLength; // max firebreak length
+      let finalX = worldX, finalY = worldY;
+      if (dist > maxDist) {
+        const scale = maxDist / dist;
+        finalX = this.fireCrewStart.x + dx * scale;
+        finalY = this.fireCrewStart.y + dy * scale;
+      }
+      // Create cut points along the line using clamped endpoints
+      const lineDx = finalX - this.fireCrewStart.x;
+      const lineDy = finalY - this.fireCrewStart.y;
+      const lineLen = Math.sqrt(lineDx * lineDx + lineDy * lineDy);
+      const steps = Math.ceil(lineLen / 20);
+      const cutPoints = [];
+      for (let i = 0; i <= steps; i++) {
+        const t = steps === 0 ? 0 : i / steps;
+        cutPoints.push({
+          x: this.fireCrewStart.x + lineDx * t,
+          y: this.fireCrewStart.y + lineDy * t,
+          cut: false,
+          cutTimer: 0
+        });
+      }
+      // Economy resource check (food wear)
+      if (!this._consumeResourcesForSkill("fireCrew")) return;
+
+      this.fireCrewLines.push({
+        startX: this.fireCrewStart.x,
+        startY: this.fireCrewStart.y,
+        endX: finalX,
+        endY: finalY,
+        progress: 0,
+        cutPoints,
+        startTime: this.timeSinceStart
+      });
+      this.fireCrewCharges--;
+      this.fireCrewDeferredCount++; // cooldown starts when this crew finishes
+      this._setSkillMessage(`Fire Crew deployed: clearing firebreak (${this.fireCrewCharges}/${this.fireCrewMaxCharges} charges)`);
+      this.fireCrewMode = null;
+      this.fireCrewStart = null;
+      this.fireCrewPreview = null;
+      return;
+    }
+    if (this.fireCrewMode && evt?.button === 2) {
+      this.fireCrewMode = null;
+      this.fireCrewStart = null;
+      this.fireCrewPreview = null;
+      this._setSkillMessage("Fire Crew canceled");
+      return;
+    }
+
+    // Drone Recon: click on active drone to select it for repositioning
+    if (this.droneReconActive.length > 0 && !this.droneReconMode && !this.droneReconMoving && evt?.button === 0) {
+      for (const d of this.droneReconActive) {
+        const dx = worldX - d.x;
+        const dy = worldY - d.y;
+        const clickDist = Math.sqrt(dx * dx + dy * dy);
+        if (clickDist <= 30) { // click within 30px of drone center to select
+          this.droneReconMoving = true;
+          this._selectedDrone = d;
+          this._setSkillMessage("Drone selected — click new location");
+          return;
+        }
+      }
+    }
+    // Drone Recon: place drone at new location after selecting it
+    if (this.droneReconMoving && this._selectedDrone && evt?.button === 0) {
+      this._selectedDrone.targetX = worldX;
+      this._selectedDrone.targetY = worldY;
+      this.droneReconMoving = false;
+      this._selectedDrone = null;
+      this._setSkillMessage("Drone moving to new position...");
+      return;
+    }
+    // Cancel drone move on right-click
+    if (this.droneReconMoving && evt?.button === 2) {
+      this.droneReconMoving = false;
+      this._setSkillMessage("Drone move canceled");
+      return;
+    }
+    // Drone Recon targeting (deploy new)
+    if (this.droneReconMode && evt?.button === 0) {
+      this._executeDroneRecon(worldX, worldY);
+      this.droneReconMode = false;
+      return;
+    }
+    if (this.droneReconMode && evt?.button === 2) {
+      this.droneReconMode = false;
+      this._setSkillMessage("Drone Recon canceled");
+      return;
+    }
+
+    // Engine Truck targeting
+    if (this.engineTruckMode && evt?.button === 0) {
+      this._executeEngineTruck(worldX, worldY);
+      this.engineTruckMode = false;
+      return;
+    }
+    if (this.engineTruckMode && evt?.button === 2) {
+      this.engineTruckMode = false;
+      this._setSkillMessage("Fire Truck canceled");
+      return;
+    }
+
+    // Recon Plane targeting
+    if (this.reconPlaneMode && evt?.button === 0) {
+      this._executeReconPlane(worldX, worldY);
+      this.reconPlaneMode = false;
+      return;
+    }
+    if (this.reconPlaneMode && evt?.button === 2) {
+      this.reconPlaneMode = false;
+      this._setSkillMessage("Recon Plane canceled");
+      return;
+    }
+
+    // General right-click deselect for toggle skills (bulldozer)
+    if (evt?.button === 2 && this.bulldozerActive) {
+      this.bulldozerActive = false;
+      this._setSkillMessage("Bulldozer deactivated");
+      return;
+    }
+
     // If a skill is selected, handle it
     if (this.selectedSkillKey && evt?.button === 0) {
       // Other skills use normal world coordinates
@@ -632,7 +1103,7 @@ export class GameState {
     const k = evt.key.toLowerCase();
 
     // Skill selection (number keys)
-    if (k >= "1" && k <= "5") {
+    if (k >= "1" && k <= "9") {
       const keyNum = Number(k);
       
       // Cancel all other active skills
@@ -653,64 +1124,267 @@ export class GameState {
       if (keyNum !== 5) {
         this.watchTowerMode = false;
       }
+      if (keyNum !== 6) {
+        this.fireCrewMode = null;
+        this.fireCrewStart = null;
+        this.fireCrewPreview = null;
+      }
+      if (keyNum !== 7) {
+        this.droneReconMode = false;
+        this.droneReconMoving = false;
+      }
+      if (keyNum !== 8) {
+        this.engineTruckMode = false;
+      }
+      if (keyNum !== 9) {
+        this.reconPlaneMode = false;
+      }
 
       // Water Bomber (key 1): activate targeting directly
       if (keyNum === 1) {
+        if (!this._isAssetUnlocked("waterBomber")) {
+          this._setSkillMessage("Water Bomber not unlocked (need Airfield)");
+          return;
+        }
+        if (this.economyState && !this.isSkillFree() && !this.economyState.isAssetAvailable("waterBomber")) {
+          this._setSkillMessage("Water Bomber durability depleted — repair at base");
+          return;
+        }
         if (this.waterBomberCooldown > 0) {
           this._setSkillMessage(`Water Bomber cooldown: ${this.waterBomberCooldown.toFixed(1)}s`);
           return;
         }
+        // If already in targeting mode, toggle water/retardant
+        if (this.waterBomberMode) {
+          this.waterBomberUseRetardant = !this.waterBomberUseRetardant;
+          const mode = this.waterBomberUseRetardant ? "Retardant" : "Water";
+          const warnToggle = this._getResourceWarning("waterBomber");
+          this._setSkillMessage(warnToggle ? `Water Bomber: ${mode} mode — ${warnToggle}` : `Water Bomber: ${mode} mode (press 1 to toggle)`);
+          return;
+        }
+        this.waterBomberUseRetardant = false;
         this.waterBomberMode = "selectStart";
-        this._setSkillMessage("Click start point for strafe");
+        const warn1 = this._getResourceWarning("waterBomber");
+        this._setSkillMessage(warn1 ? `Water Bomber: Water mode — ${warn1}` : "Water Bomber: Water mode (press 1 to toggle)");
         return;
       }
 
-      // Bulldozer (key 2): toggle active mode with energy
+      // Bulldozer (key 2): toggle active mode (energy + fuel-based)
       if (keyNum === 2) {
+        if (!this._isAssetUnlocked("bulldozer")) {
+          this._setSkillMessage("Bulldozer not unlocked (need Vehicle Bay T3)");
+          return;
+        }
+        if (this.economyState && !this.isSkillFree() && !this.economyState.isAssetAvailable("bulldozer")) {
+          this._setSkillMessage("Bulldozer durability depleted — repair at base");
+          return;
+        }
+        if (this.economyState && !this.isSkillFree() && this.economyState.fuel <= 0) {
+          this._setSkillMessage("Bulldozer out of fuel");
+          return;
+        }
         if (this.bulldozerEnergy <= 0) {
-          this._setSkillMessage("Bulldozer out of energy");
+          this._setSkillMessage("Bulldozer overheated — wait for recharge");
           return;
         }
         this.bulldozerActive = !this.bulldozerActive;
-        this._setSkillMessage(this.bulldozerActive ? "Bulldozer ACTIVE" : "Bulldozer deactivated");
+        if (this.bulldozerActive) {
+          const warn2 = this._getResourceWarning("bulldozer");
+          this._setSkillMessage(warn2 ? `Bulldozer ACTIVE — ${warn2}` : "Bulldozer ACTIVE");
+        } else {
+          this._setSkillMessage("Bulldozer deactivated");
+        }
         return;
       }
 
       // Heli Drop (key 3): activate targeting mode
       if (keyNum === 3) {
+        if (!this._isAssetUnlocked("heliDrop")) {
+          this._setSkillMessage("Helicopter not unlocked (need Helipad)");
+          return;
+        }
+        if (this.economyState && !this.isSkillFree() && !this.economyState.isAssetAvailable("helicopter")) {
+          this._setSkillMessage("Helicopter durability depleted — repair at base");
+          return;
+        }
         if (this.heliDropCooldown > 0) {
           this._setSkillMessage(`Heli Drop cooldown: ${this.heliDropCooldown.toFixed(1)}s`);
           return;
         }
-        this.heliDropMode = !this.heliDropMode;
-        this._setSkillMessage(this.heliDropMode ? "Click to drop" : "Heli Drop canceled");
+        // If already in targeting mode, toggle water/retardant
+        if (this.heliDropMode) {
+          this.heliDropUseRetardant = !this.heliDropUseRetardant;
+          const mode = this.heliDropUseRetardant ? "Retardant" : "Water";
+          const warnToggle3 = this._getResourceWarning("heliDrop");
+          this._setSkillMessage(warnToggle3 ? `Helicopter: ${mode} mode — ${warnToggle3}` : `Helicopter: ${mode} mode (press 3 to toggle)`);
+          return;
+        }
+        this.heliDropUseRetardant = false;
+        this.heliDropMode = true;
+        const warn3 = this._getResourceWarning("heliDrop");
+        this._setSkillMessage(warn3 ? `Helicopter: Water mode — ${warn3}` : "Helicopter: Water mode (press 3 to toggle)");
         return;
       }
 
-      // Worker Crew (key 4): activate targeting mode
+      // Sprinkler Trailer (key 4): activate targeting mode
       if (keyNum === 4) {
+        if (!this._isAssetUnlocked("sprinklerTrailer")) {
+          this._setSkillMessage("Sprinkler Trailer not unlocked (need Vehicle Bay T2)");
+          return;
+        }
+        if (this.economyState && !this.isSkillFree() && !this.economyState.isAssetAvailable("sprinklerTrailer")) {
+          this._setSkillMessage("Sprinkler Trailer durability depleted — repair at base");
+          return;
+        }
         if (this.workerCrewCooldown > 0) {
-          this._setSkillMessage(`Worker Crew cooldown: ${this.workerCrewCooldown.toFixed(1)}s`);
+          this._setSkillMessage(`Sprinkler Trailer cooldown: ${this.workerCrewCooldown.toFixed(1)}s`);
           return;
         }
         this.workerCrewMode = !this.workerCrewMode;
-        this._setSkillMessage(this.workerCrewMode ? "Click to deploy" : "Worker Crew canceled");
+        this._setSkillMessage(this.workerCrewMode ? "Click to deploy" : "Sprinkler Trailer canceled");
         return;
       }
 
-      // Watch Tower (key 5): activate targeting mode like other skills
+      // Fire Watch (key 5): activate targeting mode like other skills
       if (keyNum === 5) {
-        if (this.watchTowerCooldown > 0) {
-          this._setSkillMessage(`Watch Tower cooldown: ${this.watchTowerCooldown.toFixed(1)}s`);
+        if (!this._isAssetUnlocked("fireWatch")) {
+          this._setSkillMessage("Fire Watch not unlocked (need Crew Facilities)");
+          return;
+        }
+        if (this.watchTowerCharges <= 0) {
+          this._setSkillMessage(`Fire Watch recharging: ${this.watchTowerRechargeTimer.toFixed(1)}s (${this.watchTowerCharges}/${this.watchTowerMaxCharges})`);
           return;
         }
         this.watchTowerMode = !this.watchTowerMode;
-        this._setSkillMessage(this.watchTowerMode ? "Click to place watch tower" : "Watch Tower canceled");
+        this._setSkillMessage(this.watchTowerMode ? "Click to place Fire Watch" : "Fire Watch canceled");
+        return;
+      }
+
+      // Fire Crew (key 6): activate line targeting mode
+      if (keyNum === 6) {
+        if (!this._isAssetUnlocked("fireCrew")) {
+          this._setSkillMessage("Fire Crew not unlocked (need Crew Facilities)");
+          return;
+        }
+        if (this.fireCrewCharges <= 0) {
+          if (this.fireCrewDeferredCount > 0) {
+            this._setSkillMessage(`Fire Crew working... (${this.fireCrewCharges}/${this.fireCrewMaxCharges})`);
+          } else {
+            this._setSkillMessage(`Fire Crew recharging: ${this.fireCrewRechargeTimer.toFixed(1)}s (${this.fireCrewCharges}/${this.fireCrewMaxCharges})`);
+          }
+          return;
+        }
+        if (this.fireCrewMode) {
+          this.fireCrewMode = null;
+          this.fireCrewStart = null;
+          this.fireCrewPreview = null;
+          this._setSkillMessage("Fire Crew canceled");
+          return;
+        }
+        this.fireCrewMode = "selectStart";
+        this._setSkillMessage("Fire Crew: Click start of firebreak line");
+        return;
+      }
+
+      // Drone Recon (key 7): deploy drone
+      if (keyNum === 7) {
+        if (!this._isAssetUnlocked("droneRecon")) {
+          this._setSkillMessage("Drone Recon not unlocked (need Intel Facility)");
+          return;
+        }
+        if (this.droneReconCharges <= 0) {
+          this._setSkillMessage(`Drone Recon recharging: ${this.droneReconRechargeTimer.toFixed(1)}s (${this.droneReconCharges}/${this.droneReconMaxCharges})`);
+          return;
+        }
+        if (this.droneReconMode) {
+          this.droneReconMode = false;
+          this._setSkillMessage("Drone Recon canceled");
+          return;
+        }
+        this.droneReconMode = true;
+        this._setSkillMessage("Click to deploy Drone Recon");
+        return;
+      }
+
+      // Engine Truck (key 8): deploy suppression zone
+      if (keyNum === 8) {
+        if (!this._isAssetUnlocked("engineTruck")) {
+          this._setSkillMessage("Fire Truck not unlocked (need Vehicle Bay)");
+          return;
+        }
+        if (this.economyState && !this.isSkillFree() && !this.economyState.isAssetAvailable("engineTruck")) {
+          this._setSkillMessage("Fire Truck durability depleted — repair at base");
+          return;
+        }
+        if (this.engineTruckCooldown > 0) {
+          this._setSkillMessage(`Fire Truck cooldown: ${this.engineTruckCooldown.toFixed(1)}s`);
+          return;
+        }
+        if (this.engineTruckMode) {
+          this.engineTruckMode = false;
+          this._setSkillMessage("Fire Truck canceled");
+          return;
+        }
+        this.engineTruckMode = true;
+        const warn8 = this._getResourceWarning("engineTruck");
+        this._setSkillMessage(warn8 ? `Fire Truck — ${warn8}` : "Click to deploy Fire Truck");
+        return;
+      }
+
+      // Recon Plane (key 9): reveal large area on minimap
+      if (keyNum === 9) {
+        if (!this._isAssetUnlocked("reconPlane")) {
+          this._setSkillMessage("Recon Plane not unlocked (need Intel Facility T3 + Airfield)");
+          return;
+        }
+        if (this.economyState && !this.isSkillFree() && !this.economyState.isAssetAvailable("reconPlane")) {
+          this._setSkillMessage("Recon Plane durability depleted — repair at base");
+          return;
+        }
+        if (this.reconPlaneCooldown > 0) {
+          this._setSkillMessage(`Recon Plane cooldown: ${this.reconPlaneCooldown.toFixed(1)}s`);
+          return;
+        }
+        if (this.reconPlaneMode) {
+          this.reconPlaneMode = false;
+          this._setSkillMessage("Recon Plane canceled");
+          return;
+        }
+        this.reconPlaneMode = true;
+        const warn9 = this._getResourceWarning("reconPlane");
+        this._setSkillMessage(warn9 ? `Recon Plane — ${warn9}` : "Click to deploy Recon Plane");
         return;
       }
     }
 
     if (k === "escape") {
+      if (this.reconPlaneMode) {
+        this.reconPlaneMode = false;
+        this._setSkillMessage("Recon Plane canceled");
+        return;
+      }
+      if (this.engineTruckMode) {
+        this.engineTruckMode = false;
+        this._setSkillMessage("Fire Truck canceled");
+        return;
+      }
+      if (this.droneReconMoving) {
+        this.droneReconMoving = false;
+        this._setSkillMessage("Drone move canceled");
+        return;
+      }
+      if (this.droneReconMode) {
+        this.droneReconMode = false;
+        this._setSkillMessage("Drone Recon canceled");
+        return;
+      }
+      if (this.fireCrewMode) {
+        this.fireCrewMode = null;
+        this.fireCrewStart = null;
+        this.fireCrewPreview = null;
+        this._setSkillMessage("Fire Crew canceled");
+        return;
+      }
       if (this.waterBomberMode) {
         this.waterBomberMode = null;
         this.waterBomberStart = null;
@@ -761,18 +1435,210 @@ export class GameState {
     return this.gameMode?.isSkillFree?.() ?? false;
   }
 
+  // ── Economy integration: upgrade helper ──
+
+  _hasUpgrade(id) {
+    return this.economyState?.upgrades?.has(id) ?? false;
+  }
+
+  // ── Economy integration: crew recharge time (with fed penalty + upgrades) ──
+
+  _getCrewRechargeTime(skillId) {
+    const fedPenalty = this.economyState ? this.economyState.getCooldownModifier() : 0;
+    let cd;
+    if (skillId === "fireWatch") cd = this.watchTowerCooldownDuration;
+    else if (skillId === "fireCrew") cd = this.fireCrewCooldownDuration;
+    else if (skillId === "droneRecon") cd = this.droneReconCooldownDuration;
+    else return 10;
+    if (this._hasUpgrade("crewRecovery")) cd *= 0.75;
+    return cd + fedPenalty;
+  }
+
+  // ── Economy integration: real-time food consumption for crew skills ──
+
+  _consumeCrewFood() {
+    const e = this.economyState;
+    if (!e || this.isSkillFree()) return;
+
+    // Each crew skill use wears fed status (lowerFoodCons upgrades reduce drain)
+    let drain = 5;
+    if (this._hasUpgrade("lowerFoodCons1")) drain *= 0.75;
+    if (this._hasUpgrade("lowerFoodCons2")) drain *= 0.75;
+    e.crewFedStatus = Math.max(0, e.crewFedStatus - drain);
+
+    // Auto-feed: when fed drops to underfed threshold, spend 1 food to restore 20%
+    if (e.crewFedStatus <= 75 && e.food > 0) {
+      e.food -= 1;
+      e.crewFedStatus = Math.min(100, e.crewFedStatus + 20);
+    }
+  }
+
+  // ── Economy integration: asset unlock checks ──
+
+  _isAssetUnlocked(skillId) {
+    const e = this.economyState;
+    if (!e) return true; // No economy state = all available (legacy/training)
+    if (this.isSkillFree()) return true;
+    if (skillId === "waterBomber") return e.hasWaterBomber;
+    if (skillId === "bulldozer") return e.hasBulldozer;
+    if (skillId === "heliDrop") return e.hasHelicopter;
+    if (skillId === "sprinklerTrailer") return e.hasSprinklerTrailer;
+    if (skillId === "fireWatch") return e.hasFireWatch;
+    if (skillId === "fireCrew") return e.hasFireCrew;
+    if (skillId === "droneRecon") return e.hasDroneRecon;
+    if (skillId === "engineTruck") return e.hasEngineTruck;
+    if (skillId === "reconPlane") return e.hasReconPlane && e.hasWaterBomber; // Recon Plane requires Airfield
+    return true;
+  }
+
+  getBulldozerEnergyPercent() {
+    return this.bulldozerEnergy / this.bulldozerMaxEnergy;
+  }
+
+  // ── Economy integration: resource consumption ──
+  // Returns true if resources were consumed (or free mode), false if insufficient.
+
+  _getResourceWarning(skillId) {
+    const e = this.economyState;
+    if (!e || this.isSkillFree()) return null;
+    if (skillId === "waterBomber") {
+      const fuelCost = this._hasUpgrade("bomberFuelEff") ? 6 : 8;
+      if (e.fuel < fuelCost) return "Warning: Low fuel!";
+      if (this.waterBomberUseRetardant) {
+        const retCost = this._hasUpgrade("bomberRetEff") ? 3 : 4;
+        if (e.retardant < retCost) return "Warning: Low retardant!";
+      }
+    }
+    if (skillId === "bulldozer") {
+      if (e.fuel < 1) return "Warning: Low fuel!";
+    }
+
+    if (skillId === "heliDrop") {
+      const fuelCost = this._hasUpgrade("heliFuelEff") ? 4 : 5;
+      if (e.fuel < fuelCost) return "Warning: Low fuel!";
+      if (this.heliDropUseRetardant && e.retardant < 2) return "Warning: Low retardant!";
+    }
+    if (skillId === "engineTruck") {
+      if (e.fuel < 1) return "Warning: Low fuel!";
+    }
+    if (skillId === "reconPlane") {
+      if (e.money < 2000) return "Warning: Not enough money!";
+    }
+    return null;
+  }
+
+  _consumeResourcesForSkill(skillId) {
+    const e = this.economyState;
+    if (!e || this.isSkillFree()) return true;
+
+    if (skillId === "waterBomber") {
+      // 8 Fuel per sortie (bomberFuelEff reduces to 6)
+      let fuelCost = this._hasUpgrade("bomberFuelEff") ? 6 : 8;
+      // Retardant: 4 per sortie (bomberRetEff reduces to 3)
+      let retCost = this._hasUpgrade("bomberRetEff") ? 3 : 4;
+      if (e.fuel < fuelCost) {
+        this._setSkillMessage(`Not enough fuel (need ${fuelCost})`);
+        return false;
+      }
+      if (this.waterBomberUseRetardant && e.retardant < retCost) {
+        this._setSkillMessage(`Not enough retardant (need ${retCost})`);
+        return false;
+      }
+      e.fuel -= fuelCost;
+      this.fuelConsumed += fuelCost;
+      if (this.waterBomberUseRetardant) { e.retardant -= retCost; this.retardantConsumed += retCost; }
+      // Durability: 5 wear per sortie (bomberDurability reduces to 3)
+      const bomberWear = this._hasUpgrade("bomberDurability") ? 3 : 5;
+      e.assetDurability.waterBomber = Math.max(0, e.assetDurability.waterBomber - bomberWear);
+      return true;
+    }
+
+    if (skillId === "heliDrop") {
+      // 5 Fuel per deployment (heliFuelEff reduces to 4)
+      let fuelCost = this._hasUpgrade("heliFuelEff") ? 4 : 5;
+      if (e.fuel < fuelCost) {
+        this._setSkillMessage(`Not enough fuel (need ${fuelCost})`);
+        return false;
+      }
+      if (this.heliDropUseRetardant && e.retardant < 2) {
+        this._setSkillMessage("Not enough retardant (need 2)");
+        return false;
+      }
+      e.fuel -= fuelCost;
+      this.fuelConsumed += fuelCost;
+      if (this.heliDropUseRetardant) { e.retardant -= 2; this.retardantConsumed += 2; }
+      // Durability: 4 wear per deployment (heliDurability reduces to 2)
+      const heliWear = this._hasUpgrade("heliDurability") ? 2 : 4;
+      e.assetDurability.helicopter = Math.max(0, e.assetDurability.helicopter - heliWear);
+      return true;
+    }
+
+    if (skillId === "sprinklerTrailer") {
+      // No fuel cost, 2 durability wear per activation (vehicleWear1 reduces to 1)
+      let wear = 2;
+      if (this._hasUpgrade("vehicleWear1")) wear = 1;
+      e.assetDurability.sprinklerTrailer = Math.max(0, e.assetDurability.sprinklerTrailer - wear);
+      return true;
+    }
+
+    if (skillId === "fireWatch") {
+      this._consumeCrewFood();
+      return true;
+    }
+
+    if (skillId === "fireCrew") {
+      this._consumeCrewFood();
+      return true;
+    }
+
+    if (skillId === "droneRecon") {
+      this._consumeCrewFood();
+      return true;
+    }
+
+    if (skillId === "engineTruck") {
+      // 1 Fuel per use
+      if (e.fuel < 1) {
+        this._setSkillMessage("Not enough fuel (need 1)");
+        return false;
+      }
+      e.fuel -= 1;
+      this.fuelConsumed += 1;
+      // Durability: 1 wear per use
+      e.assetDurability.engineTruck = Math.max(0, e.assetDurability.engineTruck - 1);
+      return true;
+    }
+
+    if (skillId === "reconPlane") {
+      // $2,000 per deployment
+      if (e.money < 2000) {
+        this._setSkillMessage("Not enough money ($2,000 needed)");
+        return false;
+      }
+      e.money -= 2000;
+      // Durability: 2 wear per deployment
+      e.assetDurability.reconPlane = Math.max(0, e.assetDurability.reconPlane - 2);
+      return true;
+    }
+
+    return true; // Bulldozer fuel is handled per-tick
+  }
+
   _executeWaterBomberStrafe(x1, y1, x2, y2) {
     const skill = this.skills[1];
-    const cost = this.getSkillCost(skill);
+    const useEconomy = this.economyState && !this.isSkillFree();
 
-    if (this.money < cost) {
-      this._setSkillMessage("Not enough money");
-      return;
+    if (!useEconomy) {
+      const cost = this.getSkillCost(skill);
+      if (this.money < cost) {
+        this._setSkillMessage("Not enough money");
+        return;
+      }
+      if (cost > 0) this.money -= cost;
     }
 
-    if (cost > 0) {
-      this.money -= cost;
-    }
+    // Economy resource check (fuel + durability)
+    if (!this._consumeResourcesForSkill("waterBomber")) return;
     
     // Calculate extended strafe path (entry point before start, exit point after end)
     const dx = x2 - x1;
@@ -798,16 +1664,18 @@ export class GameState {
     this.waterBomberStrafing = true;
     this.waterBomberStrafeTime = 0;
     this.waterBomberEndpointHit = false;
-    this.waterBomberCooldown = this.waterBomberCooldownDuration; // Start cooldown
+    this.waterBomberStrafeUsedRetardant = this.waterBomberUseRetardant;
+    this.waterBomberCooldown = this.waterBomberCooldownDuration * (this._hasUpgrade("bomberTurnaround") ? 0.7 : 1); // Start cooldown
     this.waterBomberPath = { startX: x1, startY: y1, endX: x2, endY: y2, entryX, entryY, exitX, exitY };
     this.waterBomberPreview = { x1, y1, x2, y2 };
-    this._setSkillMessage("Bomber incoming!");
+    this._setSkillMessage(this.waterBomberUseRetardant ? "Bomber incoming (retardant)!" : "Bomber incoming!");
   }
 
   _applyStrafeSupression() {
     if (!this.waterBomberPath) return;
     
     const { startX: x1, startY: y1, endX: x2, endY: y2 } = this.waterBomberPath;
+    const useRetardant = this.waterBomberStrafeUsedRetardant;
     
     // Apply suppression along the strafe line
     const dx = x2 - x1;
@@ -819,11 +1687,12 @@ export class GameState {
       const t = steps === 0 ? 0 : i / steps;
       const px = x1 + dx * t;
       const py = y1 + dy * t;
-      const targets = this.forest.grid.queryCircle(px, py, this.waterBomberStrafeRadius);
+      const targets = this.forest.grid.queryCircle(px, py, this.waterBomberStrafeRadius * (this._hasUpgrade("bomberDrop1") ? 1.25 : 1) * (this._hasUpgrade("bomberDrop2") ? 1.25 : 1));
 
       for (const tree of targets) {
         if (tree.state !== "wet" && tree.state !== "burnt") {
           this.forest.setState(tree, "wet");
+          if (useRetardant) tree.retardant = true;
         }
       }
     }
@@ -831,14 +1700,19 @@ export class GameState {
 
   _executeHeliDrop(x, y) {
     const skill = this.skills[3];
-    const cost = this.getSkillCost(skill);
-    if (this.money < cost) {
-      this._setSkillMessage("Not enough money");
-      return;
+    const useEconomy = this.economyState && !this.isSkillFree();
+
+    if (!useEconomy) {
+      const cost = this.getSkillCost(skill);
+      if (this.money < cost) {
+        this._setSkillMessage("Not enough money");
+        return;
+      }
+      if (cost > 0) this.money -= cost;
     }
-    if (cost > 0) {
-      this.money -= cost;
-    }
+
+    // Economy resource check (fuel + durability)
+    if (!this._consumeResourcesForSkill("heliDrop")) return;
 
     // Start helicopter animation (spray happens during animation)
     this.heliDropAnimations.push({
@@ -846,68 +1720,353 @@ export class GameState {
       y,
       time: 0,
       sprayed: false,
+      usedRetardant: this.heliDropUseRetardant,
       rotation: Math.random() * Math.PI * 2, // Random rotation 0-360 degrees
     });
 
-    this.heliDropCooldown = this.heliDropCooldownDuration;
-    this._setSkillMessage("Helicopter incoming...");
+    let heliCD = this.heliDropCooldownDuration;
+    if (this._hasUpgrade("heliTurnaround1")) heliCD *= 0.8;
+    if (this._hasUpgrade("heliTurnaround2")) heliCD *= 0.8;
+    this.heliDropCooldown = heliCD;
+    this._setSkillMessage(this.heliDropUseRetardant ? "Helicopter incoming (retardant)..." : "Helicopter incoming...");
   }
 
-  _applyHeliDropSuppression(x, y) {
+  _applyHeliDropSuppression(x, y, usedRetardant) {
     // Apply suppression effect (wet status) to all trees in radius
-    const targets = this.forest.grid.queryCircle(x, y, this.heliDropRadius);
-    let suppressedCount = 0;
+    let heliRadius = this.heliDropRadius;
+    if (this._hasUpgrade("heliSuppression")) heliRadius *= 1.3;
+    const targets = this.forest.grid.queryCircle(x, y, heliRadius);
 
     for (const tree of targets) {
       const dx = tree.x - x;
       const dy = tree.y - y;
       const dist = Math.sqrt(dx * dx + dy * dy);
       
-      if (dist <= this.heliDropRadius) {
+      if (dist <= heliRadius) {
         // Apply suppression to burning and normal trees (not already wet/burnt)
         if (tree.state === "burning" || tree.state === "normal") {
           this.forest.setState(tree, "wet");
-          suppressedCount++;
+          if (usedRetardant) tree.retardant = true;
         }
       }
     }
   }
 
+  _executeDroneRecon(x, y) {
+    // Economy resource check (food wear)
+    if (!this._consumeResourcesForSkill("droneRecon")) return;
+
+    // Apply drone upgrades
+    let droneRadius = this.droneReconRadius;
+    if (this._hasUpgrade("droneRadius1")) droneRadius += 50;
+    if (this._hasUpgrade("droneRadius2")) droneRadius += 50;
+    this.droneReconActive.push({
+      x, y,
+      targetX: x,
+      targetY: y,
+      radius: droneRadius,
+      startTime: this.timeSinceStart,
+    });
+    this.droneReconCharges--;
+    if (this.droneReconCharges < this.droneReconMaxCharges && this.droneReconRechargeTimer <= 0) {
+      this.droneReconRechargeTimer = this._getCrewRechargeTime("droneRecon");
+    }
+    this._setSkillMessage(`Drone Recon deployed! (${this.droneReconCharges}/${this.droneReconMaxCharges} charges)`);
+  }
+
+  _drawDroneReconOverlay(ctx) {
+    // Show targeting circle at mouse position
+    const mouseX = this.droneReconMouseX || (this.player ? this.player.x : 0);
+    const mouseY = this.droneReconMouseY || (this.player ? this.player.y : 0);
+    const radius = this.droneReconRadius;
+
+    // Targeting zone circle - dashed cyan border
+    ctx.strokeStyle = "rgba(0, 200, 255, 0.5)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 8]);
+    ctx.beginPath();
+    ctx.arc(mouseX, mouseY, radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Center dot
+    ctx.fillStyle = "rgba(0, 200, 255, 0.8)";
+    ctx.beginPath();
+    ctx.arc(mouseX, mouseY, 6, 0, Math.PI * 2);
+    ctx.fill();
+
+    // If repositioning, draw a line from selected drone to mouse
+    if (this.droneReconMoving && this._selectedDrone) {
+      ctx.strokeStyle = "rgba(0, 200, 255, 0.4)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 6]);
+      ctx.beginPath();
+      ctx.moveTo(this._selectedDrone.x, this._selectedDrone.y);
+      ctx.lineTo(mouseX, mouseY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
+  _drawDroneReconZone(ctx, d) {
+    if (!d) return;
+
+    // Reveal zone circle - dashed cyan border
+    ctx.strokeStyle = "rgba(0, 200, 255, 0.4)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 8]);
+    ctx.beginPath();
+    ctx.arc(d.x, d.y, d.radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Drone icon at center - small rotating marker
+    const pulse = 0.7 + 0.3 * Math.sin(performance.now() / 300);
+    ctx.fillStyle = `rgba(0, 200, 255, ${pulse})`;
+    ctx.beginPath();
+    ctx.arc(d.x, d.y, 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Outer ring
+    ctx.strokeStyle = `rgba(0, 200, 255, ${0.3 + 0.2 * pulse})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(d.x, d.y, 10, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // If moving, draw a movement trail line
+    const dx = d.targetX - d.x;
+    const dy = d.targetY - d.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist > 2) {
+      ctx.strokeStyle = "rgba(0, 200, 255, 0.3)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 5]);
+      ctx.beginPath();
+      ctx.moveTo(d.x, d.y);
+      ctx.lineTo(d.targetX, d.targetY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Target marker
+      ctx.strokeStyle = "rgba(0, 200, 255, 0.5)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(d.targetX, d.targetY, 4, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
   _executeWorkerCrew(x, y) {
     const skill = this.skills[4];
-    const cost = this.getSkillCost(skill);
-    if (this.money < cost) {
-      this._setSkillMessage("Not enough money");
-      return;
-    }
-    if (cost > 0) {
-      this.money -= cost;
+    const useEconomy = this.economyState && !this.isSkillFree();
+
+    if (!useEconomy) {
+      const cost = this.getSkillCost(skill);
+      if (this.money < cost) {
+        this._setSkillMessage("Not enough money");
+        return;
+      }
+      if (cost > 0) this.money -= cost;
     }
 
-    // Create a humidity buff zone that lasts 10 seconds
+    // Economy resource check (durability wear)
+    if (!this._consumeResourcesForSkill("sprinklerTrailer")) return;
+
+    // Create a humidity buff zone (sprinklerDur extends duration, sprinklerRadius extends zone)
+    let sprinklerDuration = 10;
+    if (this._hasUpgrade("sprinklerDur")) sprinklerDuration += 4;
     this.workerCrewZone = {
       x,
       y,
       startTime: this.timeSinceStart,
-      duration: 10, // 10 seconds
+      duration: sprinklerDuration,
     };
+    // Apply sprinklerRadius upgrade to the active zone
+    if (this._hasUpgrade("sprinklerRadius")) {
+      this.workerCrewRadius = 72 * 1.3;
+    } else {
+      this.workerCrewRadius = 72;
+    }
     
-    this.workerCrewCooldown = this.workerCrewCooldownDuration;
-    this._setSkillMessage("Worker Crew deployed! Humidity boosted for 10s");
+    let sprinklerCD = this.workerCrewCooldownDuration;
+    if (this._hasUpgrade("sprinklerCooldown")) sprinklerCD *= 0.7;
+    this.workerCrewCooldown = sprinklerCD;
+    this._setSkillMessage(`Sprinkler Trailer deployed! Humidity boosted for ${sprinklerDuration}s`);
+  }
+
+  _executeEngineTruck(x, y) {
+    // Economy resource check (fuel + durability)
+    if (!this._consumeResourcesForSkill("engineTruck")) return;
+
+    // Apply engine truck upgrades
+    let etRadius = this.engineTruckRadius;
+    if (this._hasUpgrade("engineOutput")) etRadius *= 1.35;
+    let etDuration = this.engineTruckDuration;
+    if (this._hasUpgrade("engineMobility")) etDuration += 3;
+    this.engineTruckZone = {
+      x, y,
+      radius: etRadius,
+      startTime: this.timeSinceStart,
+      duration: etDuration,
+    };
+    let etCD = this.engineTruckCooldownDuration;
+    if (this._hasUpgrade("engineRecharge")) etCD *= 0.7;
+    this.engineTruckCooldown = etCD;
+    this._setSkillMessage(`Fire Truck deployed! Suppressing for ${etDuration}s`);
+  }
+
+  _drawEngineTruckOverlay(ctx) {
+    const mouseX = this.engineTruckMouseX || (this.player ? this.player.x : 0);
+    const mouseY = this.engineTruckMouseY || (this.player ? this.player.y : 0);
+    let radius = this.engineTruckRadius;
+    if (this._hasUpgrade("engineOutput")) radius *= 1.35;
+
+    // Fill with translucent red
+    ctx.fillStyle = "rgba(255, 80, 40, 0.12)";
+    ctx.beginPath();
+    ctx.arc(mouseX, mouseY, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Dashed border
+    ctx.strokeStyle = "rgba(255, 120, 60, 0.6)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.arc(mouseX, mouseY, radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Center dot
+    ctx.fillStyle = "rgba(255, 120, 60, 0.8)";
+    ctx.beginPath();
+    ctx.arc(mouseX, mouseY, 5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  _executeReconPlane(x, y) {
+    // Economy resource check ($2,000 + durability)
+    if (!this._consumeResourcesForSkill("reconPlane")) return;
+
+    // Apply recon plane upgrades
+    let rpRadius = this.reconPlaneRadius;
+    if (this._hasUpgrade("reconScanRadius")) rpRadius += 150;
+    let rpDuration = this.reconPlaneDuration;
+    if (this._hasUpgrade("reconDuration")) rpDuration += 10;
+    this.reconPlaneZones.push({
+      x, y,
+      radius: rpRadius,
+      startTime: this.timeSinceStart,
+      duration: rpDuration,
+    });
+    this.reconPlaneCooldown = this.reconPlaneCooldownDuration;
+    this._setSkillMessage(`Recon Plane deployed! Revealing area for ${rpDuration}s`);
+  }
+
+  _drawReconPlaneOverlay(ctx) {
+    const mouseX = this.reconPlaneMouseX || (this.player ? this.player.x : 0);
+    const mouseY = this.reconPlaneMouseY || (this.player ? this.player.y : 0);
+    let radius = this.reconPlaneRadius;
+    if (this._hasUpgrade("reconScanRadius")) radius += 150;
+
+    // Fill with translucent blue
+    ctx.fillStyle = "rgba(80, 160, 255, 0.08)";
+    ctx.beginPath();
+    ctx.arc(mouseX, mouseY, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Dashed border
+    ctx.strokeStyle = "rgba(80, 160, 255, 0.5)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 6]);
+    ctx.beginPath();
+    ctx.arc(mouseX, mouseY, radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Center dot
+    ctx.fillStyle = "rgba(80, 160, 255, 0.7)";
+    ctx.beginPath();
+    ctx.arc(mouseX, mouseY, 5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  _drawReconPlaneZone(ctx, zone) {
+    const elapsed = this.timeSinceStart - zone.startTime;
+    const remaining = Math.max(0, zone.duration - elapsed);
+    const pct = remaining / zone.duration;
+
+    const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 400);
+
+    // Border fades as time runs out
+    ctx.strokeStyle = `rgba(80, 160, 255, ${0.2 + 0.2 * pct})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(zone.x, zone.y, zone.radius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Timer arc
+    ctx.strokeStyle = `rgba(120, 180, 255, ${0.4 + 0.3 * pct})`;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(zone.x, zone.y, zone.radius + 4, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * pct);
+    ctx.stroke();
+
+    // Center marker
+    ctx.fillStyle = `rgba(100, 170, 255, ${0.5 + 0.2 * pulse})`;
+    ctx.beginPath();
+    ctx.arc(zone.x, zone.y, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  _drawEngineTruckZone(ctx) {
+    const z = this.engineTruckZone;
+    if (!z) return;
+
+    const elapsed = this.timeSinceStart - z.startTime;
+    const remaining = Math.max(0, z.duration - elapsed);
+    const pct = remaining / z.duration;
+
+    // Pulsing suppression zone
+    const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 250);
+    ctx.fillStyle = `rgba(255, 100, 50, ${0.08 + 0.06 * pulse})`;
+    ctx.beginPath();
+    ctx.arc(z.x, z.y, z.radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Border - fades as time runs out
+    ctx.strokeStyle = `rgba(255, 120, 60, ${0.3 + 0.3 * pct})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(z.x, z.y, z.radius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Timer arc showing remaining time
+    ctx.strokeStyle = `rgba(255, 180, 80, ${0.5 + 0.3 * pct})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(z.x, z.y, z.radius + 4, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * pct);
+    ctx.stroke();
+
+    // Center marker
+    ctx.fillStyle = `rgba(255, 140, 60, ${0.6 + 0.2 * pulse})`;
+    ctx.beginPath();
+    ctx.arc(z.x, z.y, 4, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   _useSelectedSkill(worldX, worldY) {
     const skill = this.skills[this.selectedSkillKey];
     if (!skill) return;
+    const useEconomy = this.economyState && !this.isSkillFree();
 
-    const cost = this.getSkillCost(skill);
-    if (this.money < cost) {
-      this._setSkillMessage("Not enough money");
-      return;
-    }
-
-    if (cost > 0) {
-      this.money -= cost;
+    if (!useEconomy) {
+      const cost = this.getSkillCost(skill);
+      if (this.money < cost) {
+        this._setSkillMessage("Not enough money");
+        return;
+      }
+      if (cost > 0) this.money -= cost;
     }
 
     const targets = this.forest.grid.queryCircle(worldX, worldY, skill.radius);
@@ -941,54 +2100,78 @@ export class GameState {
       this._setSkillMessage("Helicopter drop complete.");
     }
 
-    if (skill.id === "workerCrew") {
+    if (skill.id === "sprinklerTrailer") {
       for (const t of targets) {
         if (t.state === "burning") {
           this.forest.setState(t, "normal");
         }
       }
-      this._setSkillMessage("Crew deployed.");
+      this._setSkillMessage("Sprinkler Trailer deployed.");
     }
 
-    if (skill.id === "watchTower") {
+    if (skill.id === "fireWatch") {
       this.watchTowerZones.push({ x: worldX, y: worldY, radius: skill.radius });
-      this.watchTowerCooldown = this.watchTowerCooldownDuration;
-      this._setSkillMessage("Watch Tower deployed!");
+      this.watchTowerCharges--;
+      if (this.watchTowerCharges < this.watchTowerMaxCharges && this.watchTowerRechargeTimer <= 0) {
+        this.watchTowerRechargeTimer = this._getCrewRechargeTime("fireWatch");
+      }
+      this._setSkillMessage(`Fire Watch deployed! (${this.watchTowerCharges}/${this.watchTowerMaxCharges} charges)`);
     }
   }
 
   _placeWatchTower(x, y) {
     const skill = this.skills[5];
     if (!skill) return;
+    const useEconomy = this.economyState && !this.isSkillFree();
 
-    const cost = this.getSkillCost(skill);
-    if (this.money < cost) {
-      this._setSkillMessage("Not enough money");
-      return;
+    if (!useEconomy) {
+      const cost = this.getSkillCost(skill);
+      if (this.money < cost) {
+        this._setSkillMessage("Not enough money");
+        return;
+      }
+      if (cost > 0) this.money -= cost;
     }
 
-    if (cost > 0) {
-      this.money -= cost;
+    // Economy resource check (food wear)
+    if (!this._consumeResourcesForSkill("fireWatch")) return;
+
+    // Enforce max active watch towers — remove oldest if at limit
+    const activeWatches = this.watchTowerZones.filter(z => z.state === "active");
+    while (activeWatches.length >= this.watchTowerMaxActive) {
+      const oldest = activeWatches.shift();
+      const idx = this.watchTowerZones.indexOf(oldest);
+      if (idx !== -1) this.watchTowerZones.splice(idx, 1);
     }
 
     // Add watch tower zone
+    // Apply Fire Watch sight upgrades to radius
+    let watchRadius = skill.radius;
+    if (this._hasUpgrade("fireWatchSight1")) watchRadius += 60;
+    if (this._hasUpgrade("fireWatchSight2")) watchRadius += 60;
     this.watchTowerZones.push({
       x,
       y,
-      radius: skill.radius,
+      radius: watchRadius,
       state: "active", // active, burning, burnt
       timer: 0, // for burning duration
     });
 
-    this.watchTowerCooldown = this.watchTowerCooldownDuration;
-    this._setSkillMessage("Watch Tower deployed!");
+    const fedPenalty = this.economyState ? this.economyState.getCooldownModifier() : 0;
+    this.watchTowerCharges--;
+    if (this.watchTowerCharges < this.watchTowerMaxCharges && this.watchTowerRechargeTimer <= 0) {
+      this.watchTowerRechargeTimer = this._getCrewRechargeTime("fireWatch");
+    }
+    this._setSkillMessage(`Fire Watch deployed! (${this.watchTowerCharges}/${this.watchTowerMaxCharges} charges)`);
   }
 
   _applyPlayerActions(dt) {
     if (!this.player) return;
 
     const { x, y, left, right } = this.player;
-    const radius = 24;
+    let radius = 24;
+    // dozerLineWidth upgrade widens bulldozer cut radius
+    if (this.bulldozerActive && this._hasUpgrade("dozerLineWidth")) radius = 32;
     const maxPerTick = 8;
     let processed = 0;
 
@@ -1006,13 +2189,11 @@ export class GameState {
 
       if (left && (tree.state === "normal" || tree.state === "wet")) {
         tree.cutTimer += dt;
-        const cutThreshold = this.bulldozerActive ? this.bulldozerCutTime : 0.9;
+        let cutThreshold = this.bulldozerActive ? this.bulldozerCutTime : 0.9;
+        // dozerSpeed upgrade makes bulldozer cut faster
+        if (this.bulldozerActive && this._hasUpgrade("dozerSpeed")) cutThreshold *= 0.6;
         if (tree.cutTimer >= cutThreshold) {
           this.forest.setState(tree, "burnt");
-          if (this.bulldozerActive && !this.isSkillFree()) {
-            // Bulldozer mode costs money outside training.
-            this.money -= 1;
-          }
           // Hand cutting now does not gain money in any mode.
         }
         processed++;
@@ -1044,9 +2225,9 @@ export class GameState {
     const skill = this.skills[5];
     const radius = skill ? skill.radius : 320;
 
-    // Main reveal zone circle - dashed border only, no background
-    ctx.strokeStyle = "rgba(255, 200, 0, 0.6)";
-    ctx.lineWidth = 2;
+    // Main reveal zone circle - dashed border only, reduced alpha
+    ctx.strokeStyle = "rgba(255, 200, 0, 0.25)";
+    ctx.lineWidth = 1.5;
     ctx.setLineDash([8, 6]); // 8px dashes, 6px gaps
     ctx.beginPath();
     ctx.arc(mouseX, mouseY, radius, 0, Math.PI * 2);
@@ -1069,14 +2250,14 @@ export class GameState {
   _drawWatchTowerZone(ctx, zone) {
     const { x, y, radius, state } = zone;
 
-    // Watch tower zone circle - dashed border only, no background
+    // Watch tower zone circle - dashed border only, reduced alpha
     if (state === "active") {
-      ctx.strokeStyle = "rgba(255, 200, 0, 0.6)";
+      ctx.strokeStyle = "rgba(255, 200, 0, 0.2)";
     } else if (state === "burning") {
-      ctx.strokeStyle = "rgba(255, 100, 0, 0.8)"; // Orange-red for burning
+      ctx.strokeStyle = "rgba(255, 100, 0, 0.4)"; // Orange-red for burning
     }
     
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 1.5;
     ctx.setLineDash([8, 6]); // 8px dashes, 6px gaps
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, Math.PI * 2);
@@ -1104,8 +2285,8 @@ export class GameState {
   }
 
   _drawMiniMap(ctx) {
-    const miniW = 180;
-    const miniH = 120;
+    const miniW = 360; // doubled width from 180
+    const miniH = 240; // doubled height from 120
     const padding = 10;
     const x = padding;
     const y = ctx.canvas.height - miniH - padding;
@@ -1118,18 +2299,23 @@ export class GameState {
     const scaleX = miniW / this.forest.width;
     const scaleY = miniH / this.forest.height;
 
-    // Helper function to check if a world position is revealed by any watch tower
+    // Helper function to check if a world position is revealed by any watch tower or drone
     const isRevealed = (worldX, worldY) => {
       for (const zone of this.watchTowerZones) {
-        // Only active towers reveal
         if (zone.state !== "active") continue;
-        
         const dx = worldX - zone.x;
         const dy = worldY - zone.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        if (distance <= zone.radius) {
-          return true;
-        }
+        if (Math.sqrt(dx * dx + dy * dy) <= zone.radius) return true;
+      }
+      for (const d of this.droneReconActive) {
+        const dx = worldX - d.x;
+        const dy = worldY - d.y;
+        if (Math.sqrt(dx * dx + dy * dy) <= d.radius) return true;
+      }
+      for (const zone of this.reconPlaneZones) {
+        const dx = worldX - zone.x;
+        const dy = worldY - zone.y;
+        if (Math.sqrt(dx * dx + dy * dy) <= zone.radius) return true;
       }
       return false;
     };
@@ -1149,14 +2335,30 @@ export class GameState {
       ctx.globalCompositeOperation = "destination-out";
       ctx.fillStyle = "rgba(255,255,255,1)";
       for (const zone of this.watchTowerZones) {
-        // Skip burning towers - they don't reveal fog of war
         if (zone.state !== "active") continue;
-        
         const zx = x + zone.x * scaleX;
         const zy = y + zone.y * scaleY;
         const zr = zone.radius * ((scaleX + scaleY) / 2);
         ctx.beginPath();
         ctx.arc(zx, zy, zr, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // Drone recon also reveals fog
+      for (const d of this.droneReconActive) {
+        const dzx = x + d.x * scaleX;
+        const dzy = y + d.y * scaleY;
+        const dzr = d.radius * ((scaleX + scaleY) / 2);
+        ctx.beginPath();
+        ctx.arc(dzx, dzy, dzr, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // Recon plane zones reveal fog
+      for (const zone of this.reconPlaneZones) {
+        const rzx = x + zone.x * scaleX;
+        const rzy = y + zone.y * scaleY;
+        const rzr = zone.radius * ((scaleX + scaleY) / 2);
+        ctx.beginPath();
+        ctx.arc(rzx, rzy, rzr, 0, Math.PI * 2);
         ctx.fill();
       }
       ctx.globalCompositeOperation = "source-over";
@@ -1510,23 +2712,93 @@ export class GameState {
     ctx.restore();
   }
 
+  _drawCursorResourceWarning(ctx) {
+    const e = this.economyState;
+    if (!e || this.isSkillFree()) return;
+
+    let warnText = null;
+    let cx = this.player?.x ?? 0;
+    let cy = this.player?.y ?? 0;
+
+    // Water Bomber targeting
+    if (this.waterBomberMode) {
+      const warn = this._getResourceWarning("waterBomber");
+      if (warn) {
+        warnText = warn.includes("retardant") ? "Low Retardant" : "Low Fuel";
+        if (this.waterBomberStart) {
+          cx = this.player.x;
+          cy = this.player.y;
+        }
+      }
+    }
+    // Bulldozer active
+    else if (this.bulldozerActive) {
+      if (e.fuel < 1) warnText = "Low Fuel";
+      cx = this.player?.x ?? 0;
+      cy = this.player?.y ?? 0;
+    }
+    // Heli Drop targeting
+    else if (this.heliDropMode) {
+      const warn = this._getResourceWarning("heliDrop");
+      if (warn) {
+        warnText = warn.includes("retardant") ? "Low Retardant" : "Low Fuel";
+        cx = this.heliDropMouseX ?? cx;
+        cy = this.heliDropMouseY ?? cy;
+      }
+    }
+    // Engine Truck targeting
+    else if (this.engineTruckMode) {
+      if (e.fuel < 1) {
+        warnText = "Low Fuel";
+        cx = this.engineTruckMouseX ?? cx;
+        cy = this.engineTruckMouseY ?? cy;
+      }
+    }
+
+    if (!warnText) return;
+
+    // Draw pulsing warning text near cursor
+    const pulse = 0.7 + 0.3 * Math.sin(performance.now() / 250);
+    ctx.fillStyle = `rgba(255, 68, 0, ${pulse})`;
+    ctx.font = "bold 14px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    ctx.fillText(warnText, cx, cy - 30);
+  }
+
   _drawWaterBomberOverlay(ctx) {
+    // Compute upgraded strafe radius for preview
+    let strafeR = this.waterBomberStrafeRadius;
+    if (this._hasUpgrade("bomberDrop1")) strafeR *= 1.25;
+    if (this._hasUpgrade("bomberDrop2")) strafeR *= 1.25;
+
+    // Color scheme: blue for water, orange/red for retardant
+    const useRet = this.waterBomberUseRetardant;
+    const fillCol = useRet ? "rgba(255, 120, 40, 0.2)" : "rgba(100, 150, 200, 0.2)";
+    const strokeCol = useRet ? "rgba(255, 140, 60, 0.8)" : "rgba(100, 180, 255, 0.8)";
+    const strokeCol2 = useRet ? "rgba(255, 140, 60, 0.6)" : "rgba(100, 180, 255, 0.6)";
+    const lineStroke = useRet ? "rgba(255, 160, 80, 0.8)" : "rgba(100, 200, 255, 0.8)";
+    const fillCol2 = useRet ? "rgba(255, 120, 40, 0.25)" : "rgba(100, 150, 200, 0.25)";
+    const endFill = useRet ? "rgba(255, 120, 40, 0.18)" : "rgba(100, 150, 200, 0.18)";
+    const endStroke = useRet ? "rgba(255, 160, 80, 0.7)" : "rgba(100, 200, 255, 0.7)";
+    const endStroke2 = useRet ? "rgba(255, 160, 80, 0.5)" : "rgba(100, 200, 255, 0.5)";
+
     // If in start point selection mode, show targeting at player position
     if (!this.waterBomberStart && this.waterBomberMode === "selectStart") {
       const x = this.player.x;
       const y = this.player.y;
       
       // Start point circle (targeting preview)
-      ctx.fillStyle = "rgba(100, 150, 200, 0.2)";
+      ctx.fillStyle = fillCol;
       ctx.beginPath();
-      ctx.arc(x, y, this.waterBomberStrafeRadius, 0, Math.PI * 2);
+      ctx.arc(x, y, strafeR, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = "rgba(100, 180, 255, 0.8)";
+      ctx.strokeStyle = strokeCol;
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(x, y, this.waterBomberStrafeRadius, 0, Math.PI * 2);
+      ctx.arc(x, y, strafeR, 0, Math.PI * 2);
       ctx.stroke();
-      ctx.strokeStyle = "rgba(100, 180, 255, 0.6)";
+      ctx.strokeStyle = strokeCol2;
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(x - 10, y);
@@ -1534,6 +2806,15 @@ export class GameState {
       ctx.moveTo(x, y - 10);
       ctx.lineTo(x, y + 10);
       ctx.stroke();
+
+      // Mode label above targeting circle (immediate, like heli drop)
+      if (useRet) {
+        ctx.fillStyle = "rgba(255, 140, 60, 0.9)";
+        ctx.font = "bold 14px Arial";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "bottom";
+        ctx.fillText("RETARDANT", x, y - strafeR - 6);
+      }
       return;
     }
 
@@ -1543,7 +2824,7 @@ export class GameState {
     if (!this.waterBomberStart) return;
     
     let x1, y1, x2, y2;
-    const maxStrafeDist = this.waterBomberStrafeRadius * 3; // 108
+    const maxStrafeDist = strafeR * 3;
 
     // During targeting: clamp preview end point to max distance
     x1 = this.waterBomberStart.x;
@@ -1561,7 +2842,7 @@ export class GameState {
       y2 = y1 + dy * scale;
     }
 
-    ctx.strokeStyle = "rgba(100, 200, 255, 0.8)";
+    ctx.strokeStyle = lineStroke;
     ctx.lineWidth = 3;
     ctx.setLineDash([8, 4]);
     ctx.beginPath();
@@ -1571,16 +2852,16 @@ export class GameState {
     ctx.setLineDash([]);
 
     // Start point circle (similar style to spray radius)
-    ctx.fillStyle = "rgba(100, 150, 200, 0.25)";
+    ctx.fillStyle = fillCol2;
     ctx.beginPath();
-    ctx.arc(x1, y1, this.waterBomberStrafeRadius, 0, Math.PI * 2);
+    ctx.arc(x1, y1, strafeR, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = "rgba(100, 180, 255, 0.8)";
+    ctx.strokeStyle = strokeCol;
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(x1, y1, this.waterBomberStrafeRadius, 0, Math.PI * 2);
+    ctx.arc(x1, y1, strafeR, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.strokeStyle = "rgba(100, 180, 255, 0.6)";
+    ctx.strokeStyle = strokeCol2;
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(x1 - 10, y1);
@@ -1590,16 +2871,16 @@ export class GameState {
     ctx.stroke();
 
     // End point circle (similarly styled)
-    ctx.fillStyle = "rgba(100, 150, 200, 0.18)";
+    ctx.fillStyle = endFill;
     ctx.beginPath();
-    ctx.arc(x2, y2, this.waterBomberStrafeRadius, 0, Math.PI * 2);
+    ctx.arc(x2, y2, strafeR, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = "rgba(100, 200, 255, 0.7)";
+    ctx.strokeStyle = endStroke;
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(x2, y2, this.waterBomberStrafeRadius, 0, Math.PI * 2);
+    ctx.arc(x2, y2, strafeR, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.strokeStyle = "rgba(100, 200, 255, 0.5)";
+    ctx.strokeStyle = endStroke2;
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(x2 - 10, y2);
@@ -1607,53 +2888,84 @@ export class GameState {
     ctx.moveTo(x2, y2 - 10);
     ctx.lineTo(x2, y2 + 10);
     ctx.stroke();
+
+    // Retardant label at midpoint
+    if (useRet) {
+      const mx = (x1 + x2) / 2;
+      const my = (y1 + y2) / 2 - 16;
+      ctx.fillStyle = "rgba(255, 140, 60, 0.9)";
+      ctx.font = "bold 14px Arial";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "bottom";
+      ctx.fillText("RETARDANT", mx, my);
+    }
   }
 
   _drawHeliDropOverlay(ctx) {
     // Draw targeting circle at mouse position (will be set by PlayScreen)
     const mouseX = this.heliDropMouseX ?? this.player?.x ?? 0;
     const mouseY = this.heliDropMouseY ?? this.player?.y ?? 0;
+    let heliRadius = this.heliDropRadius;
+    if (this._hasUpgrade("heliSuppression")) heliRadius *= 1.3;
+
+    // Color scheme: green for water, orange/red for retardant
+    const useRet = this.heliDropUseRetardant;
+    const fillC = useRet ? "rgba(255, 120, 40, 0.15)" : "rgba(0, 255, 0, 0.15)";
+    const strokeC = useRet ? "rgba(255, 140, 60, 0.6)" : "rgba(0, 255, 0, 0.6)";
+    const centerC = useRet ? "rgba(255, 140, 60, 0.8)" : "rgba(0, 255, 0, 0.8)";
+    const centerS = useRet ? "rgba(255, 160, 80, 0.6)" : "rgba(0, 255, 100, 0.6)";
 
     // Main suppression circle
-    ctx.fillStyle = "rgba(0, 255, 0, 0.15)";
+    ctx.fillStyle = fillC;
     ctx.beginPath();
-    ctx.arc(mouseX, mouseY, this.heliDropRadius, 0, Math.PI * 2);
+    ctx.arc(mouseX, mouseY, heliRadius, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.strokeStyle = "rgba(0, 255, 0, 0.6)";
+    ctx.strokeStyle = strokeC;
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.arc(mouseX, mouseY, this.heliDropRadius, 0, Math.PI * 2);
+    ctx.arc(mouseX, mouseY, heliRadius, 0, Math.PI * 2);
     ctx.stroke();
 
     // Center point
-    ctx.fillStyle = "rgba(0, 255, 0, 0.8)";
+    ctx.fillStyle = centerC;
     ctx.beginPath();
     ctx.arc(mouseX, mouseY, 6, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.strokeStyle = "rgba(0, 255, 100, 0.6)";
+    ctx.strokeStyle = centerS;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(mouseX, mouseY, 6, 0, Math.PI * 2);
     ctx.stroke();
+
+    // Retardant label above targeting circle
+    if (useRet) {
+      ctx.fillStyle = "rgba(255, 140, 60, 0.9)";
+      ctx.font = "bold 14px Arial";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "bottom";
+      ctx.fillText("RETARDANT", mouseX, mouseY - heliRadius - 6);
+    }
   }
 
   _drawWorkerCrewOverlay(ctx) {
     // Draw targeting circle at mouse position (will be set by PlayScreen)
     const mouseX = this.workerCrewMouseX ?? this.player?.x ?? 0;
     const mouseY = this.workerCrewMouseY ?? this.player?.y ?? 0;
+    let sprinklerR = this.workerCrewRadius;
+    if (this._hasUpgrade("sprinklerRadius")) sprinklerR = 72 * 1.3;
 
     // Main humidity zone circle
     ctx.fillStyle = "rgba(100, 150, 255, 0.15)";
     ctx.beginPath();
-    ctx.arc(mouseX, mouseY, this.workerCrewRadius, 0, Math.PI * 2);
+    ctx.arc(mouseX, mouseY, sprinklerR, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.strokeStyle = "rgba(100, 150, 255, 0.6)";
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.arc(mouseX, mouseY, this.workerCrewRadius, 0, Math.PI * 2);
+    ctx.arc(mouseX, mouseY, sprinklerR, 0, Math.PI * 2);
     ctx.stroke();
 
     // Center point
@@ -1728,6 +3040,150 @@ export class GameState {
     const dist = Math.sqrt(dx * dx + dy * dy);
     
     return dist <= this.workerCrewRadius;
+  }
+
+  _drawFireCrewOverlay(ctx) {
+    // Draw dashed preview line from start point to cursor during targeting
+    if (this.fireCrewMode === "selectEnd" && this.fireCrewStart) {
+      // Clamp preview end point to max firebreak length
+      const maxDist = this.fireCrewMaxLength;
+      let endX = this.player.x;
+      let endY = this.player.y;
+      const dx = endX - this.fireCrewStart.x;
+      const dy = endY - this.fireCrewStart.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > maxDist) {
+        const scale = maxDist / dist;
+        endX = this.fireCrewStart.x + dx * scale;
+        endY = this.fireCrewStart.y + dy * scale;
+      }
+
+      ctx.save();
+      ctx.strokeStyle = "rgba(255, 180, 80, 0.7)";
+      ctx.lineWidth = this.fireCrewLineWidth;
+      ctx.lineCap = "round";
+      ctx.globalAlpha = 0.25;
+      ctx.beginPath();
+      ctx.moveTo(this.fireCrewStart.x, this.fireCrewStart.y);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      // Dashed center line
+      ctx.strokeStyle = "rgba(255, 220, 150, 0.8)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([10, 8]);
+      ctx.beginPath();
+      ctx.moveTo(this.fireCrewStart.x, this.fireCrewStart.y);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Start point marker
+      ctx.fillStyle = "rgba(255, 200, 100, 0.9)";
+      ctx.beginPath();
+      ctx.arc(this.fireCrewStart.x, this.fireCrewStart.y, 6, 0, Math.PI * 2);
+      ctx.fill();
+
+      // End point marker
+      ctx.fillStyle = "rgba(255, 200, 100, 0.6)";
+      ctx.beginPath();
+      ctx.arc(endX, endY, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Start point cursor when in selectStart mode
+    if (this.fireCrewMode === "selectStart") {
+      ctx.save();
+      ctx.strokeStyle = "rgba(255, 180, 80, 0.6)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.arc(this.player.x, this.player.y, 10, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+  }
+
+  _drawFireCrewLines(ctx) {
+    for (const line of this.fireCrewLines) {
+      const lineDx = line.endX - line.startX;
+      const lineDy = line.endY - line.startY;
+      const lineLen = Math.sqrt(lineDx * lineDx + lineDy * lineDy);
+      if (lineLen === 0) continue;
+      const dirX = lineDx / lineLen;
+      const dirY = lineDy / lineLen;
+      const progress = line.crewProgress || 0;
+
+      ctx.save();
+
+      // Draw the full planned line path (faded)
+      ctx.strokeStyle = "rgba(180, 130, 60, 0.2)";
+      ctx.lineWidth = this.fireCrewLineWidth;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(line.startX, line.startY);
+      ctx.lineTo(line.endX, line.endY);
+      ctx.stroke();
+
+      // Draw the worked segment (start to crew front) in darker brown
+      const frontDist = Math.min(progress, lineLen);
+      const frontX = line.startX + dirX * frontDist;
+      const frontY = line.startY + dirY * frontDist;
+      ctx.strokeStyle = "rgba(100, 70, 30, 0.4)";
+      ctx.lineWidth = this.fireCrewLineWidth;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(line.startX, line.startY);
+      ctx.lineTo(frontX, frontY);
+      ctx.stroke();
+
+      // Draw crew front marker (animated pulse)
+      if (progress < lineLen) {
+        const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 200);
+        ctx.fillStyle = `rgba(255, 200, 80, ${0.5 + 0.3 * pulse})`;
+        ctx.beginPath();
+        ctx.arc(frontX, frontY, 5 + 2 * pulse, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Draw per-tree progress for trees being actively cut
+      const halfW = this.fireCrewLineWidth / 2;
+      const queryRadius = lineLen / 2 + this.fireCrewLineWidth;
+      const cx = (line.startX + line.endX) / 2;
+      const cy = (line.startY + line.endY) / 2;
+      const candidates = this.forest.grid.queryCircle(cx, cy, queryRadius);
+      for (const tree of candidates) {
+        if (tree.state === "burnt" || !tree.fireCrewCutTimer) continue;
+        const tx = tree.x - line.startX;
+        const ty = tree.y - line.startY;
+        const along = tx * dirX + ty * dirY;
+        if (along < -halfW || along > lineLen + halfW) continue;
+        const perp = Math.abs(tx * (-dirY) + ty * dirX);
+        if (perp > halfW) continue;
+
+        // Show tree cut progress as a shrinking ring
+        const pct = tree.fireCrewCutTimer / this.fireCrewCutThreshold;
+        ctx.strokeStyle = `rgba(255, 180, 60, ${0.4 + 0.4 * pct})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(tree.x, tree.y, 6 * (1 - pct * 0.5), 0, Math.PI * 2 * pct);
+        ctx.stroke();
+      }
+
+      // Dashed center line
+      ctx.strokeStyle = "rgba(255, 220, 150, 0.4)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([6, 6]);
+      ctx.beginPath();
+      ctx.moveTo(line.startX, line.startY);
+      ctx.lineTo(line.endX, line.endY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
   }
 
   _drawWindSpreadVisualization(ctx) {

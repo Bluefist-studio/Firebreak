@@ -22,6 +22,7 @@ export class Forest {
     this.burningCount = 0;
     this.burntCount = 0;
     this.wetCount = 0;
+    this.everBurnedCount = 0;
   }
 
   generate() {
@@ -43,6 +44,7 @@ export class Forest {
         timer: Math.random() * 2, // seconds (used for burn progression and wet duration)
         extinguishTimer: 0,
         cutTimer: 0,
+        hasEverBurned: false,
       };
       this.trees.push(tree);
       this.grid.add(tree);
@@ -68,11 +70,18 @@ export class Forest {
     if (tree.state === TREE_STATES.BURNT) this.burntCount--;
     if (tree.state === TREE_STATES.WET) this.wetCount = (this.wetCount || 0) - 1;
 
+    // Track cumulative burn history: once any tree has burned, it should count toward buildup even if later suppressed.
+    if ((targetState === TREE_STATES.BURNING || targetState === TREE_STATES.BURNT) && !tree.hasEverBurned) {
+      tree.hasEverBurned = true;
+      this.everBurnedCount++;
+    }
+
     tree.state = targetState;
 
     tree.extinguishTimer = 0;
     tree.cutTimer = 0;
     tree.timer = 0;
+    if (targetState !== TREE_STATES.WET) tree.retardant = false;
 
     if (targetState === TREE_STATES.NORMAL) this.normalCount++;
     if (targetState === TREE_STATES.BURNING) {
@@ -92,11 +101,12 @@ export class Forest {
 
   update(dt) {
     // Wet trees dry out over time and become normal again.
-    const wetDuration = 5; // seconds
+    // Water = short suppression, Retardant = long suppression
     for (const tree of this.trees) {
       if (tree.state !== TREE_STATES.WET) continue;
       tree.timer += dt;
-      if (tree.timer >= wetDuration) {
+      const duration = tree.retardant ? 10 : 3;
+      if (tree.timer >= duration) {
         this.setState(tree, TREE_STATES.NORMAL);
       }
     }
@@ -145,7 +155,7 @@ export class Forest {
 
       if (tree.state === TREE_STATES.NORMAL) ctx.fillStyle = "#2a7";
       else if (tree.state === TREE_STATES.BURNING) ctx.fillStyle = "#f53";
-      else if (tree.state === TREE_STATES.WET) ctx.fillStyle = "#3af";
+      else if (tree.state === TREE_STATES.WET) ctx.fillStyle = tree.retardant ? "#a3f" : "#3af";
       else ctx.fillStyle = "#444";
 
       ctx.beginPath();

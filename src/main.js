@@ -1,9 +1,12 @@
 import { ScreenManager } from "./core/ScreenManager.js";
+import { EconomyState } from "./core/EconomyState.js";
 import { TitleScreen } from "./ui/TitleScreen.js";
 import { MainMenuScreen } from "./ui/MainMenuScreen.js";
+import { BaseScreen } from "./ui/BaseScreen.js";
 import { RegionMapScreen } from "./ui/RegionMapScreen.js";
 import { PlayScreen } from "./ui/PlayScreen.js";
 import { LevelCompleteScreen } from "./ui/LevelCompleteScreen.js";
+import { PreMissionScreen } from "./ui/PreMissionScreen.js";
 import { TrainingGroundMode } from "./modes/TrainingGroundMode.js";
 import { FireSeasonMode } from "./modes/FireSeasonMode.js";
 import { PineRidgeMode } from "./modes/PineRidgeMode.js";
@@ -12,6 +15,46 @@ import { missions } from "./data/missions.js";
 
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
+
+// Keep canvas scalable to current window while preserving internal resolution
+const MAX_GAME_WIDTH = 1920;
+const MAX_GAME_HEIGHT = 1080;
+
+function resizeCanvas() {
+  // Maintain internal render resolution at 1920x1080 for consistent visuals
+  canvas.width = MAX_GAME_WIDTH;
+  canvas.height = MAX_GAME_HEIGHT;
+
+  // Scale canvas to fill window while preserving aspect ratio
+  const windowRatio = window.innerWidth / window.innerHeight;
+  const targetRatio = MAX_GAME_WIDTH / MAX_GAME_HEIGHT;
+
+  if (windowRatio >= targetRatio) {
+    // window is wider than 16:9 -> fit by height
+    canvas.style.height = `${window.innerHeight}px`;
+    canvas.style.width = `${window.innerHeight * targetRatio}px`;
+  } else {
+    // window is taller than 16:9 -> fit by width
+    canvas.style.width = `${window.innerWidth}px`;
+    canvas.style.height = `${window.innerWidth / targetRatio}px`;
+  }
+
+  // Update viewport if a game is active
+  if (typeof screenManager !== "undefined") {
+    const playScreen = screenManager?.screens?.play;
+    if (playScreen?.gameState) {
+      playScreen.gameState.viewport.width = canvas.width;
+      playScreen.gameState.viewport.height = canvas.height;
+
+      // Keep camera inside world bounds
+      const cam = playScreen.gameState.camera;
+      const viewW = canvas.width / cam.zoom;
+      const viewH = canvas.height / cam.zoom;
+      cam.x = Math.max(0, Math.min(playScreen.gameState.forest.width - viewW, cam.x));
+      cam.y = Math.max(0, Math.min(playScreen.gameState.forest.height - viewH, cam.y));
+    }
+  }
+}
 
 // Optional tree sprites (falls back to vector rendering if not loaded)
 const treeSprites = {
@@ -34,15 +77,19 @@ for (const key of Object.keys(spritePaths)) {
 
 // Title/backdrop image (shown on the title screen)
 const titleBackground = new Image();
-const titleBackgroundPath = "./Media/menu_background5.png";
+const titleBackgroundPath = "./Media/menu_background7.png";
 titleBackground.src = encodeURI(titleBackgroundPath);
 
 
 // Main menu background
 const menuBackground = new Image();
-const menuBackgroundPath = "./Media/menu_background4.png";
+const menuBackgroundPath = "./Media/menu_background9.png";
 menuBackground.src = encodeURI(menuBackgroundPath);
 
+
+// Base background
+const baseBackground = new Image();
+baseBackground.src = encodeURI("./Media/base_background3.png");
 
 // Mission select background
 const levelSelectBackground = new Image();
@@ -69,6 +116,12 @@ const wildfireFrontMode = new WildfireFrontMode();
 
 let currentGameMode = null; // Track which mode is active
 
+// Persistent economy state (survives across missions)
+const economyState = new EconomyState();
+
+// Debug console command: type grant() in browser console to add $50,000
+window.grant = () => { economyState.money += 50000; return `Money: $${economyState.money.toLocaleString()}`; };
+
 const screenManager = new ScreenManager({
   screens: {
     title: new TitleScreen({
@@ -79,12 +132,26 @@ const screenManager = new ScreenManager({
       backgroundImage: menuBackground,
       onNavigate: (target) => screenManager.goTo(target)
     }),
+    base: new BaseScreen({
+      backgroundImage: baseBackground,
+      economyState,
+      onNavigate: (target) => {
+        if (target === "missions") screenManager.goTo("region");
+      },
+      onBack: () => screenManager.goTo("menu"),
+    }),
     region: new RegionMapScreen({
       backgroundImage: levelSelectBackground,
       missions,
-      onBack: () => screenManager.goTo("menu"),
+      onBack: () => screenManager.goTo("base"),
       onSelectMission: (mission) => {
-        // Select appropriate game mode based on mission
+        screenManager.goTo("preMission", { mission });
+      }
+    }),
+    preMission: new PreMissionScreen({
+      economyState,
+      onStart: (payload) => {
+        const mission = payload.mission;
         if (mission.id === "training") {
           currentGameMode = trainingMode;
           trainingMode.initializeNewSession(mission.startMoney);
@@ -102,17 +169,18 @@ const screenManager = new ScreenManager({
           wildfireFrontMode.initializeNewSession(mission.startMoney);
           screenManager.goTo("play", { mission, gameMode: wildfireFrontMode, isFirstRun: true, money: mission.startMoney });
         } else {
-          // Non-mode missions (none currently)
           currentGameMode = null;
           screenManager.goTo("play", { mission, isFirstRun: true });
         }
-      }
+      },
+      onBack: () => screenManager.goTo("region"),
     }),
     play: new PlayScreen({
       canvas,
       sprites: { ...treeSprites, bomber: bomberSprite, helo: heloSprite, bulldozer: bulldozerSprite },
-      gameMode: trainingMode,  // Default to training mode, will be updated dynamically
-      onExitToMenu: () => screenManager.goTo("menu"),
+      gameMode: trainingMode,
+      economyState,
+      onExitToMenu: () => screenManager.goTo("base"),
       onLevelComplete: (money) => {
         // Money is already tracked by trainingMode.onLevelComplete in PlayScreen
       },
@@ -164,7 +232,7 @@ const screenManager = new ScreenManager({
         if (currentGameMode) {
           currentGameMode.reset();
         }
-        screenManager.goTo("menu");
+        screenManager.goTo("base");
       },
     }),
   },
@@ -173,6 +241,10 @@ const screenManager = new ScreenManager({
 
 // Set screenManager reference after initialization to avoid circular dependency
 screenManager.screens.play.screenManager = screenManager;
+
+// Enable responsive resizing now that screenManager exists
+window.addEventListener("resize", resizeCanvas);
+resizeCanvas();
 
 let lastTime = performance.now();
 function loop(time) {
@@ -221,6 +293,22 @@ canvas.addEventListener("pointerup", (evt) => {
 window.addEventListener("keydown", (evt) => {
   screenManager.handleKeyDown(evt);
 });
+
+// Support mouse wheel zoom in/out in play screen
+window.addEventListener("wheel", (evt) => {
+  const playScreen = screenManager.current;
+  if (!playScreen || !(playScreen instanceof Object) || !playScreen.gameState) return;
+
+  const zoomStep = 0.0;
+  const minZoom = 1.75;
+  const maxZoom = 1.75;
+  if (evt.deltaY > 0) {
+    playScreen.gameState.camera.zoom = Math.max(minZoom, playScreen.gameState.camera.zoom - zoomStep);
+  } else if (evt.deltaY < 0) {
+    playScreen.gameState.camera.zoom = Math.min(maxZoom, playScreen.gameState.camera.zoom + zoomStep);
+  }
+  evt.preventDefault();
+}, { passive: false });
 
 window.addEventListener("keyup", (evt) => {
   screenManager.handleKeyUp(evt);

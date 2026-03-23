@@ -29,7 +29,7 @@ export class HelpTooltipsModal {
       },
       {
         title: "Water Bomber [1]",
-        content: "Click [1] to select, then click start and end points.\nThe bomber will strafe between points spraying water. Cooldown: 8 seconds."
+        content: "Click [1] to select, then click start and end points.\nPress [1] again while targeting to toggle Water/Retardant mode.\nRetardant costs 4 extra but suppression lasts much longer. Cooldown: 8 seconds."
       },
       {
         title: "Bulldozer [2]",
@@ -37,14 +37,14 @@ export class HelpTooltipsModal {
       },
       {
         title: "Helicopter Drop [3]",
-        content: "Click [3] to select, then click to drop suppressant.\nCreates a circle of wet trees. Cooldown: 4 seconds."
+        content: "Click [3] to select, then click to drop suppressant.\nPress [3] again while targeting to toggle Water/Retardant mode.\nRetardant costs 2 extra but suppression lasts much longer. Cooldown: 4 seconds."
       },
       {
-        title: "Worker Crew [4]",
-        content: "Click [4] to select, then click to deploy crew.\nCreates a humidity boost zone for 30 seconds. Cooldown: 12 seconds."
+        title: "Sprinkler Trailer [4]",
+        content: "Click [4] to select, then click to deploy sprinkler.\nCreates a humidity boost zone for 10 seconds. Cooldown: 12 seconds."
       },
       {
-        title: "Watch Tower [5]",
+        title: "Fire Watch [5]",
         content: "Click [5] to select, then click to reveal fog of war.\nShows hidden trees in a radius. Cooldown: 10 seconds."
       },
       {
@@ -112,15 +112,19 @@ export class HelpTooltipsModal {
     this.canvasWidth = ctx.canvas.width;
 
     const tip = this.tips[this.currentTipIndex];
-    const padding = 10;
-    const titleFontSize = 18;
-    const contentFontSize = 14;
-    const lineHeight = 18;
-    const modalWidth = 350;
-    const modalHeight= 225;
-    const buttonHeight = 40;
-    const buttonWidth = 100;
-    const spacing = 10;
+    const canvasWidth = ctx.canvas.width;
+    const canvasHeight = ctx.canvas.height;
+    const scale = Math.min(canvasWidth / 1280, canvasHeight / 720, 2);
+
+    const padding = Math.max(8, Math.round(10 * scale));
+    const titleFontSize = Math.max(14, Math.round(18 * scale));
+    const contentFontSize = Math.max(12, Math.round(14 * scale));
+    const lineHeight = Math.max(16, Math.round(18 * scale));
+    const modalWidth = Math.min(450, Math.round(350 * scale));
+    const modalHeight = Math.min(280, Math.round(225 * scale));
+    const buttonHeight = Math.max(30, Math.round(40 * scale));
+    const buttonWidth = Math.max(80, Math.round(100 * scale));
+    const spacing = Math.max(8, Math.round(10 * scale));
 
     // Calculate modal height based on content
     ctx.font = `${contentFontSize}px Arial`;
@@ -132,7 +136,7 @@ export class HelpTooltipsModal {
 
     // Position: left-center (aligned to whole pixels for crisp border)
     const modalX = padding;
-    const modalY = Math.round((this.canvasHeight - modalHeight) / 2);
+    const modalY = Math.round((canvasHeight - modalHeight) / 2);
 
     // Draw background (glass blur style)
     ctx.save();
@@ -254,14 +258,18 @@ export class HelpTooltipsModal {
   handlePointerDown(x, y) {
     if (!this.isOpen) return;
 
-    const padding = 20;
-    const modalWidth = 350;
-    const buttonHeight = 40;
-    const buttonWidth = 100;
-    const modalHeight = 250; // Matches render() value
+    const canvasWidth = this.canvasWidth || 1280;
+    const canvasHeight = this.canvasHeight || 720;
+    const scale = Math.min(canvasWidth / 1280, canvasHeight / 720, 2);
+
+    const padding = Math.max(8, Math.round(10 * scale));
+    const modalWidth = Math.min(450, Math.round(350 * scale));
+    const modalHeight = Math.min(280, Math.round(225 * scale));
+    const buttonHeight = Math.max(30, Math.round(40 * scale));
+    const buttonWidth = Math.max(80, Math.round(100 * scale));
 
     const modalX = padding;
-    const modalY = (this.canvasHeight - modalHeight) / 2;
+    const modalY = Math.round((canvasHeight - modalHeight) / 2);
 
     // Check if click is on next button (right side)
     const nextButtonX = modalX + modalWidth - padding - buttonWidth;

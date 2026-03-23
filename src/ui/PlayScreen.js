@@ -5,12 +5,13 @@ import { SkillHotbarHUD } from "./SkillHotbarHUD.js";
 import { TopStatusHUD } from "./TopStatusHUD.js";
 
 export class PlayScreen {
-  constructor({ onExitToMenu, canvas, sprites, screenManager, onLevelComplete }) {
+  constructor({ onExitToMenu, canvas, sprites, screenManager, onLevelComplete, economyState }) {
     this.onExitToMenu = onExitToMenu;
     this.canvas = canvas;
     this.sprites = sprites;
     this.screenManager = screenManager;
     this.onLevelComplete = onLevelComplete;
+    this.economyState = economyState ?? null;
     this.gameState = null;
     this.gameMode = null;
     this.fireControlModal = null;
@@ -31,6 +32,10 @@ export class PlayScreen {
     this.announcementText = "";
     this.isFirstTrainingRun = false;
     this.currentDay = 0;
+
+    // Game speed control
+    this.gameSpeed = 1;
+    this.speedLevels = [1, 2, 3, 5];
   }
 
   onEnter(payload) {
@@ -40,6 +45,7 @@ export class PlayScreen {
       this.isFirstTrainingRun = payload.isFirstRun ?? false;
       this.currentDay = payload.day ?? 0;
       this.levelCompleteHandled = false;
+      this.gameSpeed = 1;
       
       const viewport = {
         width: this.canvas?.width ?? 1280,
@@ -69,7 +75,7 @@ export class PlayScreen {
         startingMoney = this.gameMode.getStartingMoney(scaledMission.startMoney);
       }
       
-      this.gameState = new GameState({ mission: scaledMission, gameMode: this.gameMode, viewport, sprites: this.sprites });
+      this.gameState = new GameState({ mission: scaledMission, gameMode: this.gameMode, viewport, sprites: this.sprites, economyState: this.economyState });
       
       // Override money with calculated amount
       this.gameState.money = startingMoney;
@@ -79,7 +85,7 @@ export class PlayScreen {
       
       this.fireControlModal = new FireControlModal({ gameState: this.gameState });
       this.skillHotbarHUD = new SkillHotbarHUD({ gameState: this.gameState });
-      this.topStatusHUD = new TopStatusHUD({ gameState: this.gameState });
+      this.topStatusHUD = new TopStatusHUD({ gameState: this.gameState, playScreen: this });
       this.gameState.start();
     }
   }
@@ -95,17 +101,64 @@ export class PlayScreen {
       }
     }
 
-    // Check if level is complete (for training ground)
-    if (this.gameState.over && !this.levelCompleteHandled && this.currentMission?.isTrainingGround) {
+    // Check if level is complete (fire controlled or failed)
+    if ((this.gameState.over || this._checkBurnFailure()) && !this.levelCompleteHandled) {
       this.levelCompleteHandled = true;
+      
+      // Force game over state if burn failure triggered while fire still active
+      this.gameState.over = true;
+      this.gameState.saved = this.gameState.forest.normalCount;
+      
+      // Calculate burn percentage for failure check (only fully burnt trees count)
+      const totalTrees = this.gameState.forest.treeCount || 1;
+      const burntCount = this.gameState.forest.burntCount || 0;
+      const burnPercent = (burntCount / totalTrees) * 100;
+      const failThreshold = this.currentMission?.failBurnPercent ?? 100;
+      const isFailed = burnPercent >= failThreshold;
       
       // Save the money for next level
       this.onLevelComplete?.(this.gameState.money);
+
+      // Calculate and apply mission reward (skip for free/training modes and failures)
+      let reward = this.currentMission?.missionReward ?? 0;
+      const isFreeMode = this.gameMode?.isSkillFree?.() ?? false;
+
+      // Fire Season: day-based reward formula
+      if (!isFreeMode && this.currentMission?.id === "fire_season" && this.gameMode?.currentDay != null) {
+        reward = 1000 + 500 * this.gameMode.currentDay;
+      }
+
+      if (isFailed) reward = 0;
+
+      if (reward > 0 && this.economyState && !isFreeMode) {
+        this.economyState.addMissionReward(reward);
+      }
+
+      // Food is now consumed in real-time during mission — just track total for display
+      const foodWear = Math.ceil(this.gameState.foodWearAccumulated || 0);
+
+      // Fallback government funding — only granted on mission failure if player is low (skip for training)
+      let fallbackGrant = 0;
+      if (isFailed && this.economyState && !isFreeMode) {
+        const fundingAmount = this.economyState.getFallbackFunding();
+        if (this.economyState.money < fundingAmount) {
+          fallbackGrant = fundingAmount - this.economyState.money;
+          this.economyState.money = fundingAmount;
+        }
+      }
       
       this.screenManager?.goTo("levelComplete", {
         mission: this.currentMission,
         saved: this.gameState.saved,
         burntCount: this.gameState.forest.burntCount,
+        totalTrees: this.gameState.forest.treeCount,
+        burnPercent: Math.round(burnPercent),
+        isFailed,
+        reward: isFreeMode ? 0 : reward,
+        fallbackGrant,
+        foodWear: Math.ceil(this.gameState.foodWearAccumulated || 0),
+        fuelConsumed: this.gameState.fuelConsumed || 0,
+        retardantConsumed: this.gameState.retardantConsumed || 0,
       });
       return; // Don't continue updating
     }
@@ -133,7 +186,8 @@ export class PlayScreen {
       right: this.rightHeld,
     });
 
-    this.gameState.update(dt);
+    this.gameState.gameSpeed = this.gameSpeed;
+    this.gameState.update(dt * this.gameSpeed);
   }
 
   render(ctx) {
@@ -174,6 +228,11 @@ export class PlayScreen {
       // keep allowing clicks to fall through when background is clicked
     }
 
+    // Check if click is on the clock/speed controls
+    if (this.topStatusHUD?.handlePointerDown(x, y)) {
+      return;
+    }
+
     // Check if click is on the skill hotbar HUD first
     if (this.skillHotbarHUD?.handlePointerDown(x, y)) {
       return;
@@ -188,10 +247,9 @@ export class PlayScreen {
     // Always route to fire control modal (for collapse/expand toggle on header)
     this.fireControlModal?.handlePointerDown(x, y);
 
-    // If mission is over and NOT a training ground, click returns to menu.
-    // For training ground, the level complete screen should be shown instead.
-    if (this.gameState?.over && !this.currentMission?.isTrainingGround) {
-      this.onExitToMenu?.();
+    // If mission is over, the level complete screen should show.
+    // (Handled by update() transition, but safety fallback)
+    if (this.gameState?.over) {
       return;
     }
 
@@ -206,8 +264,30 @@ export class PlayScreen {
       const inHeliDropMode = this.gameState?.heliDropMode;
       const inWorkerCrewMode = this.gameState?.workerCrewMode;
       const inWatchTowerMode = this.gameState?.watchTowerMode;
+      const inFireCrewMode = this.gameState?.fireCrewMode;
+      const inDroneReconMode = this.gameState?.droneReconMode || this.gameState?.droneReconMoving;
+      const inEngineTruckMode = this.gameState?.engineTruckMode;
+      const inReconPlaneMode = this.gameState?.reconPlaneMode;
       
-      if (!selectedSkill && !inWaterBomberMode && !inHeliDropMode && !inWorkerCrewMode && !inWatchTowerMode) {
+      if (!selectedSkill && !inWaterBomberMode && !inHeliDropMode && !inWorkerCrewMode && !inWatchTowerMode && !inFireCrewMode && !inDroneReconMode && !inEngineTruckMode && !inReconPlaneMode) {
+        // Check if clicking on an active drone to select it
+        if (this.gameState?.droneReconActive?.length > 0 && evt.button === 0) {
+          const worldX = x / (this.gameState.camera?.zoom || 1) + (this.gameState.camera?.x || 0);
+          const worldY = y / (this.gameState.camera?.zoom || 1) + (this.gameState.camera?.y || 0);
+          for (const d of this.gameState.droneReconActive) {
+            const dx = worldX - d.x;
+            const dy = worldY - d.y;
+            if (Math.sqrt(dx * dx + dy * dy) <= 30) {
+              this.gameState.handlePointerDown(x, y, evt);
+              return;
+            }
+          }
+        }
+        // Right-click deselects bulldozer if active
+        if (evt.button === 2 && this.gameState?.bulldozerActive) {
+          this.gameState.handlePointerDown(x, y, evt);
+          return;
+        }
         if (evt.button === 0) this.leftHeld = true;
         if (evt.button === 2) this.rightHeld = true;
       } else {
@@ -252,6 +332,33 @@ export class PlayScreen {
       this.gameState.watchTowerMouseX = worldX;
       this.gameState.watchTowerMouseY = worldY;
     }
+
+    // Update drone recon targeting circle position
+    if (this.gameState?.droneReconMode || this.gameState?.droneReconMoving) {
+      const cam = this.gameState.camera;
+      const worldX = cam.x + x / cam.zoom;
+      const worldY = cam.y + y / cam.zoom;
+      this.gameState.droneReconMouseX = worldX;
+      this.gameState.droneReconMouseY = worldY;
+    }
+
+    // Update engine truck targeting circle position
+    if (this.gameState?.engineTruckMode) {
+      const cam = this.gameState.camera;
+      const worldX = cam.x + x / cam.zoom;
+      const worldY = cam.y + y / cam.zoom;
+      this.gameState.engineTruckMouseX = worldX;
+      this.gameState.engineTruckMouseY = worldY;
+    }
+
+    // Update recon plane targeting circle position
+    if (this.gameState?.reconPlaneMode) {
+      const cam = this.gameState.camera;
+      const worldX = cam.x + x / cam.zoom;
+      const worldY = cam.y + y / cam.zoom;
+      this.gameState.reconPlaneMouseX = worldX;
+      this.gameState.reconPlaneMouseY = worldY;
+    }
   }
 
   handleKeyDown(evt) {
@@ -269,13 +376,27 @@ export class PlayScreen {
     }
 
     if (key === "escape") {
-      // For training ground, don't allow escape during gameplay
-      // The level complete screen will show buttons instead
-      if (!this.gameState?.over || !this.currentMission?.isTrainingGround) {
+      // Don't allow escape once level complete is being handled
+      if (!this.levelCompleteHandled) {
         this.onExitToMenu?.();
       }
       return;
     }
+
+    // Speed controls: '-' to slow down, '+' or '=' to speed up
+    if (this.gameState) {
+      if (key === "-") {
+        const idx = this.speedLevels.indexOf(this.gameSpeed);
+        if (idx > 0) this.gameSpeed = this.speedLevels[idx - 1];
+        return;
+      }
+      if (key === "=" || key === "+") {
+        const idx = this.speedLevels.indexOf(this.gameSpeed);
+        if (idx < this.speedLevels.length - 1) this.gameSpeed = this.speedLevels[idx + 1];
+        return;
+      }
+    }
+
     this.gameState?.handleKeyDown(evt);
   }
 
@@ -288,5 +409,14 @@ export class PlayScreen {
   handlePointerUp(evt) {
     if (evt.button === 0) this.leftHeld = false;
     if (evt.button === 2) this.rightHeld = false;
+  }
+
+  _checkBurnFailure() {
+    if (!this.gameState || this.gameState.timeSinceStart < 1) return false;
+    const totalTrees = this.gameState.forest.treeCount || 1;
+    const burntCount = this.gameState.forest.burntCount || 0;
+    const burnPercent = (burntCount / totalTrees) * 100;
+    const failThreshold = this.currentMission?.failBurnPercent ?? 100;
+    return burnPercent >= failThreshold;
   }
 }

@@ -1,0 +1,782 @@
+Yes. Here is the framework updated so **Fire Crew, Fire Watch, and Drone Recon all use the Food wear mechanic** rather than normal in-mission resource spending.
+
+---
+
+# Firebreak Master Framework
+
+## Mission Loop
+
+1. Choose mission
+2. Review terrain and weather
+3. Start mission
+4. Deploy assets during mission
+5. Complete mission and earn money and achievements
+6. Repair, refuel, restock, and recover
+7. Unlock upgrades and tougher missions
+
+---
+
+# Core Economy Rule
+
+* **Money is never spent during missions**
+* Money is only used **before and after missions**
+* Missions are replayable for money
+* Harder missions pay more
+* **Fallback government funding** helps prevent failure spirals
+
+---
+
+# Resources
+
+## Money
+
+Used for:
+
+* buying resources between missions
+* buying new assets through progression
+* unlocking building tiers
+* buying upgrades
+* general expansion
+* hiring large-scale contracted support such as **Recon Plane**
+
+Gained from:
+
+* mission completion
+* difficulty-based rewards
+* fallback government funding
+
+---
+
+## Fuel
+
+Used for:
+
+* Water Bomber deployments
+* Helicopter deployments
+* Bulldozer active use
+* Engine Truck use
+
+Rules:
+
+* purchased with money
+* capped by storage
+* storage upgraded through **Vehicle Bay**
+
+---
+
+## Retardant
+
+Used for:
+
+* stronger Water Bomber suppression
+* stronger Helicopter suppression
+
+Rules:
+
+* purchased with money
+* capped by storage
+* storage upgraded through **Airfield**
+* player may choose **water** instead during mission
+
+Identity:
+
+* **Retardant = premium aerial suppression**
+* **Water = free but weaker**
+
+---
+
+## Food
+
+Food represents **crew readiness / operator strain**, not just meals.
+
+Used for:
+
+* maintaining crew fed status between missions
+* restoring readiness for personnel-operated assets
+* Fire Crew usage
+* Fire Watch usage
+* Drone Recon usage
+
+Rules:
+
+* Food is primarily a **wear-and-recovery system**, not a standard in-mission spend like Fuel
+* crew-operated assets generate **Food wear**
+* Food wear is resolved between missions through the fed-status system
+* crew does **not** become unavailable during a mission from food depletion
+* fed status affects the **next mission**
+* storage upgraded through **Crew Facilities**
+
+Fed status effects:
+
+* **76–100** = normal cooldown
+* **51–75** = cooldown +1
+* **26–50** = cooldown +3
+* **1–25** = cooldown +5
+* **0** = unavailable
+
+---
+
+## Parts
+
+Used for:
+
+* repairing asset durability between missions
+* upgrade requirements
+* occasional field repair/support needs
+
+Rules:
+
+* purchased with money
+* capped by storage
+* storage upgraded through **Vehicle Bay**
+
+Repair rule:
+
+* **Repairs cost Parts only**
+* **1 Part = 5 durability restored**
+* repairs can be **partial between missions**
+
+---
+
+# Asset Categories
+
+## No durability
+
+### Fire Crew
+
+* does not use durability
+* uses the **Food wear / fed-status** system instead
+
+### Fire Watch
+
+* crew-type intel asset
+* no durability
+* static placed observation asset
+* reveals minimap in a radius
+* remains active until burnt or mission end
+* uses **Food wear per use**
+
+### Drone Recon
+
+* no durability
+* temporary movable intel asset
+* active for a duration
+* can be moved while active
+* uses **Food wear per use**
+
+---
+
+## Has durability
+
+All start with **100 durability**:
+
+* Water Bomber
+* Helicopter
+* Bulldozer
+* Sprinkler Trailer
+* Engine Truck
+* Recon Plane
+
+Availability rule:
+
+* if durability is above 0, asset is available
+* if durability reaches 0 during a mission, that asset is unavailable for the rest of that mission
+
+---
+
+# Durability / Wear
+
+## Water Bomber
+
+* **100 durability**
+* **3 wear per sortie**
+
+## Helicopter
+
+* **100 durability**
+* **2 wear per deployment**
+
+## Bulldozer
+
+* **100 durability**
+* **1 wear per 4 seconds active**
+
+## Sprinkler Trailer
+
+* **100 durability**
+* **1 wear per activation**
+
+## Engine Truck
+
+* **100 durability**
+* wear behavior still to be finalized with final mechanic
+
+## Recon Plane
+
+* **100 durability**
+* **1 wear per deployment**
+
+---
+
+# Asset Use Costs
+
+## Crew-Type Food Wear Assets
+
+These do **not** use standard in-mission spending like Fuel.
+Instead, they generate **Food wear**, which is resolved between missions through readiness and fed status.
+
+### Fire Crew
+
+* uses **Food wear through mission activity**
+* affected by between-mission fed status
+* exact wear rate still to be tuned
+
+### Fire Watch
+
+* **1 Food wear per use**
+
+### Drone Recon
+
+* **1 Food wear per use**
+
+## Recon Plane
+
+* **$2,000 per deployment**
+* wear: **1 per deployment**
+
+## Bulldozer
+
+* **1 Fuel per second while active**
+* wear: **1 per 4 seconds active**
+
+## Sprinkler Trailer
+
+* **no fuel cost**
+* wear: **1 per activation**
+
+## Engine Truck
+
+* **1 Fuel per use** placeholder
+* final behavior still to be determined
+
+## Helicopter
+
+Using water:
+
+* **5 Fuel**
+* wear: **2 per deployment**
+
+Using retardant:
+
+* **5 Fuel + 2 Retardant**
+* wear: **2 per deployment**
+
+## Water Bomber
+
+Using water:
+
+* **8 Fuel**
+* wear: **3 per sortie**
+
+Using retardant:
+
+* **8 Fuel + 4 Retardant**
+* wear: **3 per sortie**
+
+---
+
+# Recon Identity Split
+
+## Fire Watch
+
+* static
+* persistent
+* holds vision over one area
+* best for defending and monitoring a sector
+
+## Drone Recon
+
+* temporary
+* movable
+* active scouting tool
+* best for checking changing threats and scouting new areas
+
+## Recon Plane
+
+* large-scale strategic recon
+* paid support deployment
+* best for broad area awareness
+
+---
+
+# Resource Prices
+
+Bought between missions with money:
+
+* **Fuel:** $200 per unit
+* **Retardant:** $500 per unit
+* **Food:** $200 per unit
+* **Parts:** $400 per unit
+
+---
+
+# Mission Reward Guideline
+
+* **Easy:** $8,000–$12,000
+* **Medium:** $14,000–$22,000
+* **Hard:** $26,000–$38,000
+* **Very Hard:** $45,000–$65,000
+
+---
+
+# Building-Based Upgrade System
+
+## Core rules
+
+* progression is organized by buildings
+* **Command Center** controls major progression and building unlocks
+* each building has tiers
+* unlocking a tier gives access to that tier’s upgrades
+* **no prerequisites inside a tier**
+* player may buy upgrades in any order within an unlocked tier
+
+## Asset unlock rule
+
+**Unlocking a building tier automatically grants any asset unlock tied to that tier.**
+All other upgrades in that tier must still be purchased.
+
+## Tier 1 rule
+
+When a building is unlocked, Tier 1 includes:
+
+* the building unlock itself
+* the first asset unlock
+* the baseline storage or support tied to that building
+
+---
+
+# Building Unlock Order
+
+## Starting buildings
+
+* Command Center
+* Crew Facilities
+
+## Unlock order
+
+1. Intel Facility
+2. Vehicle Bay
+3. Helipad
+4. Airfield
+
+---
+
+# Command Center
+
+Role:
+
+* unlocks and strategic progression
+
+## Tier 1
+
+* Starting building
+* Mission asset loadout slots: 2
+* Basic mission access
+* Fallback funding I
+
+## Tier 2
+
+* Unlock Intel Facility
+* Better pre-mission forecast
+* Mission asset loadout slots: 2
+* More mission choices
+* Fallback funding II
+
+## Tier 3
+
+* Unlock Vehicle Bay
+* Mission asset loadout slots: 3
+* Unlock harder mission regions
+* Fallback funding III
+
+## Tier 4
+
+* Unlock Helipad
+* Mission asset loadout slots: 4
+* More mission choices
+* Fallback funding IV
+
+## Tier 5
+
+* Unlock Airfield
+* Mission asset loadout slots: 5
+* Unlock hardest mission regions
+* Fallback funding V
+
+### Command Center tier unlock costs
+
+* Tier 2: **$12,000**
+* Tier 3: **$22,000**
+* Tier 4: **$35,000**
+* Tier 5: **$50,000**
+
+### Command Center upgrade costs
+
+* Better pre-mission forecast: **$6,000**
+* More mission choices I: **$8,000**
+* More mission choices II: **$12,000**
+
+---
+
+# Crew Facilities
+
+Role:
+
+* Fire Crew, Fire Watch, and food support
+
+## Tier 1
+
+* Starting building
+* Unlock Fire Crew
+* Unlock Fire Watch
+* Food storage I
+
+## Tier 2
+
+* Faster firebreak cutting
+* Reduced underfed effects I
+* Food storage II
+* More crew availability I
+* Fire Watch sight I
+
+## Tier 3
+
+* Reduced crew recovery (in-mission cooldown)
+* Lower food consumption I
+* Food storage III
+
+## Tier 4
+
+* More crew availability II
+* Reduced underfed effects II
+* Lower food consumption II
+* Fire Watch sight II
+
+### Crew Facilities upgrade costs
+
+* Faster firebreak cutting: **$6,000**
+* Reduced underfed effects I: **$7,000**
+* Food storage II: **$8,000**
+* More crew availability I: **$12,000**
+* Fire Watch sight I: **$8,000**
+* Reduced crew recovery: **$9,000**
+* Lower food consumption I: **$8,000**
+* Food storage III: **$11,000**
+* More crew availability II: **$18,000**
+* Reduced underfed effects II: **$12,000**
+* Lower food consumption II: **$12,000**
+* Fire Watch sight II: **$12,000**
+
+---
+
+# Intel Facility
+
+Role:
+
+* map awareness, forecasting, and recon tools
+
+## Tier 1
+
+* Unlock building
+* Weather forecast
+* Unlock Drone Recon
+* Drone reveal radius I
+* Drone duration I
+
+## Tier 2
+
+* Improved drone control or responsiveness
+* Drone reveal radius II
+* Drone duration II
+
+## Tier 3
+
+* Unlock Recon Plane
+* Larger recon scan radius
+* Longer recon duration
+* Perfect weather forecast
+
+Requirement:
+
+* Recon Plane requires Airfield
+
+### Intel Facility tier unlock costs
+
+* Tier 2: **$14,000**
+* Tier 3: **$22,000**
+
+### Intel Facility upgrade costs
+
+* Weather forecast: **$6,000**
+* Drone reveal radius I: **$8,000**
+* Drone duration I: **$8,000**
+* Improved drone control: **$8,000**
+* Drone reveal radius II: **$12,000**
+* Drone duration II: **$12,000**
+* Larger recon scan radius: **$12,000**
+* Longer recon duration: **$12,000**
+* Perfect weather forecast: **$14,000**
+
+---
+
+# Vehicle Bay
+
+Role:
+
+* ground vehicles and logistics
+
+## Tier 1
+
+* Unlock building
+* Unlock Bulldozer
+* Fuel storage I
+* Parts storage I
+* Dozer speed
+* Dozer line width
+
+## Tier 2
+
+* Unlock Sprinkler Trailer
+* Sprinkler radius
+* Sprinkler duration
+* Sprinkler cooldown reduction
+* Reduced vehicle wear I
+* Better vehicle fuel efficiency I
+* Fuel storage II
+* Parts storage II
+
+## Tier 3
+
+* Unlock Engine Truck
+* Engine truck output
+* Engine truck mobility
+* Better vehicle fuel efficiency II
+* Reduced vehicle wear II
+* Recharge time speed upgrade for Dozer
+* Recharge time speed upgrade for Engine
+* Fuel storage III
+* Parts storage III
+
+## Tier 4
+
+* Fuel storage IV
+
+### Vehicle Bay tier unlock costs
+
+* Tier 2: **$16,000**
+* Tier 3: **$24,000**
+* Tier 4: **$18,000**
+
+### Vehicle Bay upgrade costs
+
+* Dozer speed: **$8,000**
+* Dozer line width: **$9,000**
+* Sprinkler radius: **$8,000**
+* Sprinkler duration: **$8,000**
+* Sprinkler cooldown reduction: **$9,000**
+* Reduced vehicle wear I: **$9,000**
+* Better vehicle fuel efficiency I: **$9,000**
+* Fuel storage II: **$10,000**
+* Parts storage II: **$10,000**
+* Engine truck output: **$10,000**
+* Engine truck mobility: **$10,000**
+* Better vehicle fuel efficiency II: **$13,000**
+* Reduced vehicle wear II: **$13,000**
+* Dozer recharge speed: **$10,000**
+* Engine recharge speed: **$10,000**
+* Fuel storage III: **$14,000**
+* Parts storage III: **$14,000**
+* Fuel storage IV: **$18,000**
+
+---
+
+# Helipad
+
+Role:
+
+* helicopter operations
+
+## Tier 1
+
+* Unlock building
+* Unlock Helicopter
+* Better fuel efficiency
+* Better durability
+
+## Tier 2
+
+* Larger suppression zone
+* Reduced Turnaround I
+
+## Tier 3
+
+* Reduced Turnaround II
+
+### Helipad tier unlock costs
+
+* Tier 2: **$18,000**
+* Tier 3: **$22,000**
+
+### Helipad upgrade costs
+
+* Better fuel efficiency: **$11,000**
+* Better durability: **$11,000**
+* Larger suppression zone: **$14,000**
+* Reduced Turnaround I: **$15,000**
+* Reduced Turnaround II: **$20,000**
+
+---
+
+# Airfield
+
+Role:
+
+* fixed-wing aircraft and retardant logistics
+
+## Tier 1
+
+* Unlock building
+* Unlock Water Bomber
+* Retardant storage I
+* Better fuel efficiency
+* Better retardant efficiency
+* Increased bomber durability
+
+## Tier 2
+
+* Reduced Turnaround
+* Retardant storage II
+* Larger bomber drop I
+
+## Tier 3
+
+* Larger bomber drop II
+* Retardant storage III
+
+## Tier 4
+
+* Retardant storage IV
+
+### Airfield tier unlock costs
+
+* Tier 2: **$24,000**
+* Tier 3: **$30,000**
+* Tier 4: **$22,000**
+
+### Airfield upgrade costs
+
+* Better fuel efficiency: **$13,000**
+* Better retardant efficiency: **$14,000**
+* Increased bomber durability: **$13,000**
+* Reduced Turnaround: **$18,000**
+* Retardant storage II: **$12,000**
+* Larger bomber drop I: **$18,000**
+* Larger bomber drop II: **$22,000**
+* Retardant storage III: **$16,000**
+* Retardant storage IV: **$22,000**
+
+---
+
+# Storage Values
+
+## Fuel
+
+* Storage I: **20**
+* Storage II: **35**
+* Storage III: **50**
+* Storage IV: **70**
+
+## Retardant
+
+* Storage I: **8**
+* Storage II: **14**
+* Storage III: **20**
+* Storage IV: **28**
+
+## Food
+
+* Storage I: **10**
+* Storage II: **18**
+* Storage III: **28**
+
+## Parts
+
+* Storage I: **10**
+* Storage II: **18**
+* Storage III: **28**
+
+---
+
+# Current Design Principles
+
+* money is the between-mission progression currency
+* resources are bought between missions
+* aircraft are expensive operational power
+* vehicles trade fuel for sustained ground control
+* crews use food / fed-status rather than durability
+* food represents readiness and operator strain, not just meals
+* crew-type assets use **Food wear**, not normal in-mission spending
+* durability is a longer-term machine limitation
+* tier unlocks automatically grant the asset tied to that tier
+* upgrades inside unlocked tiers are bought individually
+
+---
+
+# Current Open Tuning Points
+
+These are the main things still worth testing:
+
+* Fire Crew exact Food wear rate
+* Bulldozer fuel per second
+* Engine Truck final mechanic and wear behavior
+* exact Drone Recon movement / control limits
+* exact Fire Watch placement behavior
+* exact storage numbers
+* exact mission payouts
+* exact balance between Fire Watch, Drone Recon, and Recon Plane value
+
+---
+
+# Main Locked Decisions
+
+These feel locked enough to build around:
+
+* Money is only spent before and after missions
+* Repairs cost Parts only
+* 1 Part = 5 durability restored
+* Fire Watch replaces Watch Tower
+* Fire Watch belongs to Crew Facilities
+* Fire Crew and Fire Watch both unlock at Crew Facilities Tier 1
+* Drone Recon is a movable timed intel asset
+* Fire Watch uses **1 Food wear per use**
+* Drone Recon uses **1 Food wear per use**
+* Fire Crew uses the **1 Food wear per use**
+* Recon Plane costs **$2,000**
+* Recon Plane stays in Intel Facility
+* Drone Recon stays in Intel Facility
+* Sprinkler Trailer uses wear only
+* Engine Truck currently uses 1 Fuel per use as placeholder
+* Food represents crew readiness / operator strain
+* fed thresholds are:
+
+  * 76–100 normal
+  * 51–75 +1
+  * 26–50 +3
+  * 1–25 +5
+  * 0 unavailable
+
+---
+
+This version is cleaner.
+
+The main remaining thing inside the crew system is just to define **Fire Crew’s exact Food wear rate**, so all three crew-type assets follow the same logic with different intensity.
