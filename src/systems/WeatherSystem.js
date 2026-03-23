@@ -1,5 +1,5 @@
 export class WeatherSystem {
-  constructor({ temperature = 22, humidity = 40, windAngle = 0, windStrength = 0.3 } = {}) {
+  constructor({ temperature = 22, humidity = 40, windAngle = 0, windStrength = 30 } = {}) {
     this.temperature = temperature;
     this.humidity = humidity;
     this.windAngle = windAngle;
@@ -10,7 +10,7 @@ export class WeatherSystem {
   update(dt) {
     // Wind gradually increases over mission duration (+0.1 per 10 minutes)
     this._elapsed = (this._elapsed || 0) + dt;
-    const windIncrease = Math.floor(this._elapsed / 600) * 0.1;
+    const windIncrease = Math.floor(this._elapsed / 600) * 10;
     this.windStrength = this._baseWindStrength + windIncrease;
   }
 
@@ -22,40 +22,20 @@ export class WeatherSystem {
   computeSpreadModifier(source, target) {
     const base = this.baseSpreadChance; // base spread chance
 
-    // Temperature modifier: 22 = standard, 40 = extreme (hot)
-    const tempNorm = Math.max(0, Math.min(1, (this.temperature - 22) / (40 - 22)));
-    const tempMod = 1 + tempNorm * tempNorm * 0.5; // smooth curve, minimal change near 22
+    // Temperature modifier: 10°C = ×0.8, 35°C ≈ ×1.625, 50°C = ×1.8 (linear)
+    const tempMod = Math.max(0.5, 0.8 + (this.temperature - 10) * 0.025);
 
-    // Humidity modifier (relative humidity behavior):
-    // - >= 60% : fire spreads slowly, harder to ignite
-    // - 30–60%: moderate fire activity
-    // - < 30% : fire spreads easily
-    // - < 20% : extreme fire behavior possible
-    let humidMod;
-    if (this.humidity >= 60) {
-      humidMod = 0.45; // damp conditions
-    } else if (this.humidity >= 30) {
-      humidMod = 1.0; // normal spread
-    } else if (this.humidity >= 20) {
-      humidMod = 1.5; // easier spread
-    } else {
-      humidMod = 2.0; // extreme dry
-    }
+    // Humidity modifier: smooth linear scale.
+    // 80% = ×0.45 (very damp), 55% = ×1.00 (neutral), 10% = ×2.00 (extreme dry)
+    const humidMod = Math.max(0.45, Math.min(1.45, 0.45 + (80 - this.humidity) * (1.00 / 70)));
 
-    const dx = target.x - source.x;
-    const dy = target.y - source.y;
-    // Account for canvas Y-axis (inverted): negate dy to convert to standard math coords
-    const angleToTarget = Math.atan2(-dy, dx);
-    const windDiff = this._angleDiff(this.windAngle, angleToTarget);
-    const windFactor = 1 + this.windStrength * Math.max(0, Math.cos(windDiff));
-
-    // If it's very humid, fire spread becomes much less likely.
-    return base * tempMod * humidMod * windFactor;
+    // Wind does NOT affect spread probability — only spread radius (see FireSpreadSystem).
+    return base * tempMod * humidMod;
   }
 
   getFireRisk() {
-    if (this.humidity < 20 || this.temperature >= 32) return "High";
-    if (this.humidity < 30 || this.temperature >= 25) return "Moderate";
+    if (this.humidity < 30 || this.temperature >= 35) return "High";
+    if (this.humidity < 50 || this.temperature >= 27) return "Moderate";
     return "Low";
   }
 

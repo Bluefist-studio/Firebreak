@@ -1,0 +1,167 @@
+FIREBREAK - COMPLETE SKILL & WEATHER BREAKDOWN
+ALL 9 SKILLS
+Skill 1: Water Bomber ✈️
+Cost: $100 (8 fuel in economy; 6 with upgrade)
+Area: 220px radius strafe path
+Mechanism: Two-point targeting (start → end point). Sprays suppression along a 2.5s path. Toggle between Water/Retardant modes (press 1 while active)
+Cooldown: 8 seconds
+Resources: 4 retardant per use (3 with upgrade), 5 durability wear (3 with upgrade)
+Upgrades: Fuel efficiency, Retardant efficiency, Durability
+Unlock: Airfield
+
+Skill 2: Bulldozer 🚜
+Cost: $40 + 1 fuel/second (in economy)
+Area: 180px radius cut width
+Mechanism: Energy-based active cutting. Drains energy 25/sec while active, recharges 5/sec idle. Cut time 0.2s with boost (vs 0.9s normal)
+Energy: 100 max
+Activation: Key 2 toggle on/off, direct mouse control
+Upgrades: Faster cutting speed, Fuel efficiency, Durability
+Unlock: Vehicle Bay T3
+Skill 3: Heli Drop 🚁
+Cost: $50 (5 fuel in economy; 4 with upgrade)
+Area: 260px radius targeting, 43px radius suppression circles
+Mechanism: Single-click drop. 0.5s animation before spray hits. Toggle Water/Retardant with Key 3
+Cooldown: 4 seconds
+Resources: 5 fuel (4 optimized), 2 retardant (per use), 4 wear (2 optimized)
+Upgrades: Fuel efficiency, Durability
+Unlock: Helipad
+
+Skill 4: Sprinkler Trailer 💧
+Cost: FREE ($0, only durability wear)
+Area: 140px deployment, 72px humidity effect zone
+Mechanism: Static humidity buff zone for 5 seconds = 100% humidity (blocks ALL fire spread in zone)
+Cooldown: 12 seconds
+Resources: 2 durability wear (1 with vehicle wear upgrade)
+Upgrades: Durability reduction
+Unlock: Vehicle Bay T2
+
+Skill 5: Fire Watch 👁️
+Cost: $20 (FREE in economy but costs 5% crew fed status)
+Area: 320px minimap reveal radius
+Mechanism: Places fog-of-war reveal zone on minimap. Shows enemy fire positions
+Charges: 1 base, +1 per crew availability upgrade (max 3)
+Recharge: 10 seconds per charge
+Resources: 5% crew fed status per use (can be reduced 75% with food consumption upgrades)
+Upgrades: Crew availability (charges), Crew recovery speed (×0.75), Sight radius, Lower food consumption
+Unlock: Crew Facilities
+
+Skill 6: Fire Crew 👷
+Cost: FREE (but costs 5% fed status per activation)
+Area: Line-based, 150px max length, 32px wide cut
+Mechanism: Two-point targeting (start → end). Crew walks at 14 px/sec, cuts trees at 8s each (7s with upgrade)
+Charges: 1 base, +1 per crew availability upgrade (max 3)
+Cooldown: 2s (but deferred until crew finishes cutting)
+Resources: 5% crew fed status (reducible to 3.75% with food upgrades)
+Upgrades: Crew availability, Faster cutting (crew 1.4x speed), Crew recovery, Lower food consumption, Underfed effects
+Unlock: Crew Facilities
+
+Skill 7: Drone Recon 🚁
+Cost: FREE (but costs 5% fed status per deployment)
+Area: 280px reveal radius, lasts 45 seconds
+Mechanism: Autonomous drone reveals fog of war. Can reposition drone by clicking it + new location (speed 120 px/sec, 180 with upgrade)
+Charges: 1 base, +1 per crew availability upgrade
+Recharge: 10s per charge (affected by crew recovery upgrade)
+Resources: 5% fed status per deployment
+Duration: 45s (+15s per drone duration upgrade, infinite stacking)
+Upgrades: Crew availability, Drone movement speed, Drone duration, Crew recovery, Lower food consumption
+Unlock: Intel Facility
+
+Skill 8: Fire Truck / Engine Truck 🚒
+Cost: FREE (but 1 fuel per use in economy)
+Area: 60px (smallest), 25px actual suppression radius
+Mechanism: Creates suppression zone for 6 seconds, actively suppresses fire in small area
+Cooldown: 5 seconds
+Resources: 1 fuel per use
+Upgrades: Limited (vehicle durability if applicable)
+Unlock: Vehicle Bay
+
+Skill 9: Recon Plane ✈️
+Cost: $2,000 (EXPENSIVE - highest single skill cost)
+Area: 600px reveal radius (largest intel skill)
+Mechanism: Large-scale fog-of-war reveal, lasts 25 seconds
+Cooldown: 20 seconds
+Resources: $2,000 money per use
+Upgrades: None
+Unlock: Intel Facility T3 + Airfield (requires BOTH)
+
+
+WEATHER SYSTEM
+
+🌡️ TEMPERATURE
+Mission	                Base	   Range
+Training/Fire Season	22°C	-10 to +50°C
+Pine Ridge	            24°C	-10 to +50°C
+Wildfire Front	        28°C	-10 to +50°C
+
+Temperature	   Burn Duration	Fire Radius	   Spread Modifier
+10°C	       18.0s	        5 px	       ×0.80 (minimum)
+22°C	       15.0s	       17 px	       ×1.10 (typical)
+28°C	       13.5s	       23 px	       ×1.25 (hotter)
+50°C	        8.0s	       45 px	       ×1.80 (extreme!)
+
+
+Effects:
+Burn Duration: burnDuration = max(6, 18 − (temp − 10) × 0.25) — higher temp = faster burnout, shorter fire duration
+Fire Radius: baseRadius = max(3, 5 + (temp − 10) × 1.0) — hot air expands flames (~1px per °C above 10°C)
+Spread Probability: tempMod = max(0.5, 0.8 + (temp − 10) × 0.025) — linear scale, 10°C = ×0.80, 50°C = ×1.80
+
+
+💨 HUMIDITY   (smooth linear scale)
+Humidity	 Condition	    Spread Modifier
+80%	         Very Damp	    ×0.45 (minimum)
+55%	         Moderate	    ×0.81
+40%	         Dry	        ×1.02
+25%	         Very Dry	    ×1.24
+10%	         Extreme Dry	×1.45 (maximum)
+
+Formula: humidMod = max(0.45, min(1.45, 0.45 + (80 − humidity) × (1.00 / 70)))
+
+Base Values by Mission:
+Training/Fire Season: 40%
+Pine Ridge: 30%
+Wildfire Front: 25%
+Humidity Manipulation:
+
+Sprinkler Trailer: Creates 72px radius zone forced to 100% humidity = blocks fire spread completely
+
+
+🌪️ WIND   (scale: 1–100 integer)
+Wind affects ONLY spread radius — NOT spread probability.
+
+Wind Conditions & Radius Added (at maximum downwind)
+1–9:    Barely noticeable   (+1–5 px downwind)
+10–30:  Light breeze        (+5–15 px downwind)
+31–50:  Moderate wind       (+16–25 px downwind)
+51–70:  Strong wind         (+26–35 px downwind)
+71–90:  Very strong wind    (+36–45 px downwind)
+91–100: Extreme             (+46–50 px downwind)
+
+Base Values:
+Training/Fire Season: 30
+Pine Ridge: 30
+Wildfire Front: 10 (more survivable)
+
+Escalation Model:
+Wind increases +10 per 10 minutes of mission time
+
+Formula: currentWind = baseWind + floor(elapsedTime / 600) × 10
+Example: After 20 minutes, +20 to base wind
+
+Directional Effects (Wind-Adjusted Spread Radius):
+windAddedRadius = max(1, (windStrength / 100) × 50)   → 1px at wind=1, 50px at wind=100
+Downwind: spreadRadius = baseRadius + windAddedRadius
+Upwind:   spreadRadius = baseRadius (no bonus or penalty upwind)
+Formula: windAdjustedRadius = baseRadius + windAddedRadius × max(0, cos(windDifference))
+Where windInfluence = cos(angleDifference) ranges -1 (dead upwind) to +1 (dead downwind)
+
+Wind in Missions:
+Angle and strength both vary (debug keys: Q/E for angle, K/L for strength ±5)
+Optional randomizeWind: true flag varies wind throughout mission
+FIRE SPREAD PROBABILITY (MASTER FORMULA)
+Formula: spreadChance = baseSpreadChance × tempMod × humidMod
+(Wind affects radius only — downwind fire reaches further, not more likely per attempt)
+
+Example:
+28°C (hot), 25% humidity (dry) → tempMod ×1.25 × humidMod ×1.24 = ~×1.55 baseline spread chance
+20°C (cool), 60% humidity (damp) → tempMod ×1.05 × humidMod ×0.74 = ~×0.78 baseline spread chance
+All crew skills (5, 6, 7) share the 5% food cost and benefit from crew-related upgrades. Storage upgrades (food, fuel, parts, retardant) are Command Center only and require higher tiers.

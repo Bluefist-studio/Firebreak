@@ -99,7 +99,7 @@ export class FireControlModal {
       {
         label: "Wind Strength:",
         key: "windStrength",
-        inc: -0.1,
+        inc: -5,
         x: startX + 120,
         y: (y += rowHeight),
         width: 24,
@@ -110,7 +110,7 @@ export class FireControlModal {
       {
         label: "Wind Strength:",
         key: "windStrength",
-        inc: 0.1,
+        inc: 5,
         x: startX + 195,
         y: y,
         width: 24,
@@ -126,7 +126,7 @@ export class FireControlModal {
       temperature: { min: -10, max: 50 },
       humidity: { min: 10, max: 100 },
       windAngle: { min: 0, max: 360 },
-      windStrength: { min: 0, max: 2 },
+      windStrength: { min: 1, max: 100 },
       spreadInterval: { min: 0.3, max: 2 },
       baseSpreadChance: { min: 0.001, max: 0.02 },
     };
@@ -204,6 +204,9 @@ export class FireControlModal {
     } else if (key === "windAngle") {
       this.gameState.weather.windAngle = newValue;
     } else if (key === "windStrength") {
+      // Also update _baseWindStrength so WeatherSystem.update() doesn't overwrite this value
+      const currentIncrease = Math.floor((this.gameState.weather._elapsed || 0) / 600) * 10;
+      this.gameState.weather._baseWindStrength = Math.max(1, newValue - currentIncrease);
       this.gameState.weather.windStrength = newValue;
     } else if (key === "spreadInterval") {
       this.gameState.fire.updateInterval = newValue;
@@ -295,7 +298,7 @@ export class FireControlModal {
         key: "windStrength",
         minusBtn: this.buttons[6],
         plusBtn: this.buttons[7],
-        format: (v) => `${v.toFixed(1)}`,
+        format: (v) => `${Math.round(v)}`,
       },
     ];
 

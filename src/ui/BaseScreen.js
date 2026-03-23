@@ -1214,6 +1214,7 @@ export class BaseScreen {
           }
           if (this._hitTest(x, y, this._upgradeBtn)) {
             this.economy.upgradeTier(this.selectedBuilding);
+            this.economy.save();
             this._checkTutorialWaitCondition();
             return;
           }
@@ -1262,6 +1263,7 @@ export class BaseScreen {
     // Upgrade button in panel
     if (this.selectedBuilding && this._hitTest(x, y, this._upgradeBtn)) {
       this.economy.upgradeTier(this.selectedBuilding);
+      this.economy.save();
       return;
     }
 
@@ -1269,6 +1271,7 @@ export class BaseScreen {
     for (const [upgradeId, rect] of Object.entries(this._upgradeBtns)) {
       if (this._hitTest(x, y, rect)) {
         this.economy.buyUpgrade(upgradeId);
+        this.economy.save();
         return;
       }
     }
@@ -1277,6 +1280,7 @@ export class BaseScreen {
     for (const key of ["fuel", "retardant", "food", "parts"]) {
       if (this._hitTest(x, y, this._shopBtns[key])) {
         this.economy.buyResource(key, 1);
+        this.economy.save();
         return;
       }
     }
@@ -1285,6 +1289,7 @@ export class BaseScreen {
     for (const [assetId, rect] of Object.entries(this._repairBtns)) {
       if (this._hitTest(x, y, rect)) {
         this.economy.repairAsset(assetId, 1);
+        this.economy.save();
         return;
       }
     }
@@ -1292,6 +1297,7 @@ export class BaseScreen {
     // Feed crew button
     if (this._feedCrewBtn && this._hitTest(x, y, this._feedCrewBtn)) {
       this.economy.feedCrew();
+      this.economy.save();
       return;
     }
 
@@ -1415,6 +1421,7 @@ export class BaseScreen {
       // Last step — finish tutorial
       this._tutorialStep = 0;
       this.economy.tutorialComplete = true;
+      this.economy.save();
       this.selectedBuilding = null;
       return;
     }

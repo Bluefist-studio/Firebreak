@@ -382,4 +382,83 @@ export class EconomyState {
     const fundingByTier = { 1: 2000, 2: 3000, 3: 4000, 4: 5000 };
     return fundingByTier[this.fallbackFundingTier] ?? 2000;
   }
+
+  // ── Save / Load (localStorage) ──
+
+  static SAVE_KEY = "firebreak_save";
+
+  static hasSavedGame() {
+    try {
+      return localStorage.getItem(EconomyState.SAVE_KEY) !== null;
+    } catch { return false; }
+  }
+
+  save() {
+    const data = {
+      money: this.money,
+      tutorialComplete: this.tutorialComplete,
+      fuel: this.fuel,
+      retardant: this.retardant,
+      food: this.food,
+      parts: this.parts,
+      storageLevel: { ...this.storageLevel },
+      buildings: {},
+      upgrades: [...this.upgrades],
+      assetDurability: { ...this.assetDurability },
+      crewFedStatus: this.crewFedStatus,
+      loadoutSlots: this.loadoutSlots,
+      fallbackFundingTier: this.fallbackFundingTier,
+    };
+    for (const [id, b] of Object.entries(this.buildings)) {
+      data.buildings[id] = { tier: b.tier };
+    }
+    try {
+      localStorage.setItem(EconomyState.SAVE_KEY, JSON.stringify(data));
+      console.log("[Save] Game saved successfully. money=", this.money);
+    } catch (e) {
+      console.error("[Save] FAILED to save:", e);
+    }
+  }
+
+  load() {
+    try {
+      const raw = localStorage.getItem(EconomyState.SAVE_KEY);
+      if (!raw) return false;
+      const data = JSON.parse(raw);
+
+      this.money = data.money ?? 12000;
+      this.tutorialComplete = data.tutorialComplete ?? false;
+      this.fuel = data.fuel ?? 15;
+      this.retardant = data.retardant ?? 0;
+      this.food = data.food ?? 2;
+      this.parts = data.parts ?? 2;
+
+      if (data.storageLevel) {
+        for (const key of Object.keys(this.storageLevel)) {
+          this.storageLevel[key] = data.storageLevel[key] ?? 0;
+        }
+      }
+      if (data.buildings) {
+        for (const [id, saved] of Object.entries(data.buildings)) {
+          if (this.buildings[id]) {
+            this.buildings[id].tier = saved.tier ?? 0;
+          }
+        }
+      }
+      this.upgrades = new Set(data.upgrades ?? []);
+      if (data.assetDurability) {
+        for (const key of Object.keys(this.assetDurability)) {
+          this.assetDurability[key] = data.assetDurability[key] ?? 100;
+        }
+      }
+      this.crewFedStatus = data.crewFedStatus ?? 100;
+      this.loadoutSlots = data.loadoutSlots ?? 2;
+      this.fallbackFundingTier = data.fallbackFundingTier ?? 1;
+      return true;
+    } catch { return false; }
+  }
+
+  static deleteSave() {
+    try { localStorage.removeItem(EconomyState.SAVE_KEY); } catch {}
+  }
 }

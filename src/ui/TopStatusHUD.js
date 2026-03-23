@@ -57,7 +57,7 @@ export class TopStatusHUD {
       `Fire: ${forest.burningCount}`,
       `${this.gameState.weather.temperature}°C`,
       `${this.gameState.weather.humidity}%`,
-      `${(this.gameState.weather.windStrength * 10).toFixed(1)} km/h`
+      `${Math.round(this.gameState.weather.windStrength)}`
     ];
 
     // Show economy resources when not using free skills

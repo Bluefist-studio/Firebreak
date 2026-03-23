@@ -23,7 +23,7 @@ export class GameState {
       temperature: mission.weather?.temperature ?? 22,
       humidity: mission.weather?.humidity ?? 40,
       windAngle: mission.weather?.windAngle ?? 0,
-      windStrength: mission.weather?.windStrength ?? 0.3,
+      windStrength: mission.weather?.windStrength ?? 30,
     });
 
     this.forest = new Forest({
@@ -549,7 +549,8 @@ export class GameState {
           const dist = Math.sqrt(dx * dx + dy * dy);
           
           // Use wind-aware spread radius (like trees)
-          const spreadRadius = 22 + this.weather.windStrength * 30;
+          const baseR = Math.max(3, 5 + (this.weather.temperature - 10) * 1.0);
+          const spreadRadius = baseR + Math.max(1, (this.weather.windStrength / 100) * 50);
           
           if (dist <= spreadRadius) {
             // Use same fire spread probability as trees
@@ -709,7 +710,7 @@ export class GameState {
       ctx.fillText(`Temp: ${this.weather.temperature.toFixed(0)}°C`, 12, 80);
       ctx.fillText(`Humidity: ${this.weather.humidity.toFixed(0)}%`, 12, 100);
       ctx.fillText(`Fire risk: ${this.weather.getFireRisk()}`, 12, 120);
-      ctx.fillText(`Wind: ${this.weather.windStrength.toFixed(2)} (dir ${(this.weather.windAngle * 180/Math.PI).toFixed(0)}°)`, 12, 140);
+      ctx.fillText(`Wind: ${Math.round(this.weather.windStrength)} (dir ${(this.weather.windAngle * 180/Math.PI).toFixed(0)}°)`, 12, 140);
 
       // Tool indicators
       ctx.font = "14px Arial";
@@ -1409,8 +1410,8 @@ export class GameState {
     // wind controls
     if (k === "q") this.weather.windAngle -= Math.PI / 16;
     if (k === "e") this.weather.windAngle += Math.PI / 16;
-    if (k === "k") this.weather.windStrength = Math.max(0, this.weather.windStrength - 0.05);
-    if (k === "l") this.weather.windStrength = Math.min(1, this.weather.windStrength + 0.05);
+    if (k === "k") this.weather.windStrength = Math.max(1, this.weather.windStrength - 5);
+    if (k === "l") this.weather.windStrength = Math.min(100, this.weather.windStrength + 5);
 
     // Debug toggles
     if (k === "b") this.showDebugInfo = !this.showDebugInfo;
@@ -2707,7 +2708,7 @@ export class GameState {
     ctx.font = "12px Arial";
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
-    ctx.fillText(`Wind: ${this.weather.windStrength.toFixed(2)}`, compassX, compassY + compassRadius + 8);
+    ctx.fillText(`Wind: ${Math.round(this.weather.windStrength)}`, compassX, compassY + compassRadius + 8);
 
     ctx.restore();
   }
@@ -3192,7 +3193,7 @@ export class GameState {
     
     for (const tree of burning) {
       // Calculate base spread radius
-      const baseRadius = 22 + (this.weather.temperature - 22) * 1.5;
+      const baseRadius = Math.max(3, 5 + (this.weather.temperature - 10) * 1.0);
     // Wind angle is already in radians; no conversion needed
     const windAngleRad = this.weather.windAngle;
       for (let layer = 0; layer < 3; layer++) {
@@ -3205,7 +3206,7 @@ export class GameState {
         for (let angle = 0; angle <= Math.PI * 2; angle += Math.PI / 24) {
           // Calculate wind influence at this angle
           const windInfluence = Math.cos(angle - windAngleRad);
-          let radius = baseRadius + this.weather.windStrength * windInfluence * 30 + this.weather.windStrength * 5;
+          let radius = baseRadius + Math.max(1, (this.weather.windStrength / 100) * 50) * Math.max(0, windInfluence);
           
           // Add waviness
           const waveAmount = Math.sin(angle * 4 + layer * Math.PI / 3) * 3;
@@ -3229,7 +3230,7 @@ export class GameState {
         
         for (let angle = 0; angle <= Math.PI * 2; angle += Math.PI / 32) {
           const windInfluence = Math.cos(angle - windAngleRad);
-          const radius = baseRadius + this.weather.windStrength * windInfluence * 30 + this.weather.windStrength * 5;
+          const radius = baseRadius + Math.max(1, (this.weather.windStrength / 100) * 50) * Math.max(0, windInfluence);
           
           const x = tree.x + Math.cos(angle) * radius;
           const y = tree.y + Math.sin(angle) * radius;

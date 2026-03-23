@@ -52,21 +52,19 @@ export class FireSpreadSystem {
       // Using 0.7 factor to slow burn slightly (0.7 second burn time)
       tree.timer += step * speedupMultiplier * 0.7;
 
-      // Burn duration shortens with higher temperature (hotter = faster burnout)
-      const tempFactor = 1 - Math.max(-10, Math.min(40, this.weather.temperature)) / 100;
-      // Burn duration: base longer, scaled by temperature.
-      let burnDuration = Math.max(6, 20 * tempFactor);
+      // Burn duration shortens with higher temperature: 10°C = 18s, 30°C = 13s, 50°C = 8s
+      const burnDuration = Math.max(6, 18 - (this.weather.temperature - 10) * 0.25);
       
       if (tree.timer >= burnDuration) {
         this.forest.setState(tree, "burnt");
         continue;
       }
 
-        // Wind increases the distance fire can spread (less base range, gentler wind effect).
-        // Temperature also affects radius: hotter = wider spread.
-        // Use a larger base search radius to find potential targets
-        const baseRadius = 22 + (this.weather.temperature - 22) * 1.5;
-        const maxSearchRadius = baseRadius + this.weather.windStrength * 30;
+        // Temperature affects radius: 10°C = 6px, 30°C ≈ 27px, 50°C = 49px
+        // Wind (1–100 scale) adds 3–15px to the max search radius
+        const baseRadius = Math.max(3, 5 + (this.weather.temperature - 10) * 1.0);
+        const windAddedRadius = Math.max(1, (this.weather.windStrength / 100) * 50);
+        const maxSearchRadius = baseRadius + windAddedRadius;
         const neighbors = this.forest.grid.queryCircle(tree.x, tree.y, maxSearchRadius);
         let lit = 0;
         for (const other of neighbors) {
@@ -83,7 +81,8 @@ export class FireSpreadSystem {
           const windAngleRad = -this.weather.windAngle;  // Already in radians
           const windDiff = this._angleDiff(windAngleRad, angleToTarget);
           const windInfluence = Math.cos(windDiff); // -1 (upwind) to +1 (downwind)
-          const windAdjustedRadius = baseRadius + this.weather.windStrength * windInfluence * 30 + this.weather.windStrength * 5;
+          // Wind expands radius downwind, no bonus upwind
+          const windAdjustedRadius = baseRadius + windAddedRadius * Math.max(0, windInfluence);
           
           // Check if target is within wind-adjusted radius
           if (distToTarget > windAdjustedRadius) continue;

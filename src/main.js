@@ -77,7 +77,7 @@ for (const key of Object.keys(spritePaths)) {
 
 // Title/backdrop image (shown on the title screen)
 const titleBackground = new Image();
-const titleBackgroundPath = "./Media/menu_background7.png";
+const titleBackgroundPath = "./Media/menu_background10.png";
 titleBackground.src = encodeURI(titleBackgroundPath);
 
 
@@ -119,6 +119,37 @@ let currentGameMode = null; // Track which mode is active
 // Persistent economy state (survives across missions)
 const economyState = new EconomyState();
 
+// Load saved game if one exists (Continue will use this; New Game resets it)
+if (EconomyState.hasSavedGame()) {
+  economyState.load();
+}
+
+// Helper: reset economyState to fresh defaults for New Game
+function resetEconomyForNewGame() {
+  EconomyState.deleteSave();
+  const fresh = new EconomyState();
+  Object.assign(economyState, {
+    money: fresh.money,
+    tutorialComplete: fresh.tutorialComplete,
+    fuel: fresh.fuel,
+    retardant: fresh.retardant,
+    food: fresh.food,
+    parts: fresh.parts,
+    crewFedStatus: fresh.crewFedStatus,
+    loadoutSlots: fresh.loadoutSlots,
+    fallbackFundingTier: fresh.fallbackFundingTier,
+  });
+  economyState.storageLevel = { ...fresh.storageLevel };
+  for (const [id, b] of Object.entries(fresh.buildings)) {
+    economyState.buildings[id].tier = b.tier;
+  }
+  economyState.upgrades = new Set();
+  for (const key of Object.keys(fresh.assetDurability)) {
+    economyState.assetDurability[key] = fresh.assetDurability[key];
+  }
+  economyState.save();
+}
+
 // Debug console command: type grant() in browser console to add $50,000
 window.grant = () => { economyState.money += 50000; return `Money: $${economyState.money.toLocaleString()}`; };
 
@@ -130,15 +161,28 @@ const screenManager = new ScreenManager({
     }),
     menu: new MainMenuScreen({
       backgroundImage: menuBackground,
-      onNavigate: (target) => screenManager.goTo(target)
+      onNavigate: (target) => screenManager.goTo(target),
+      onNewGame: () => {
+        resetEconomyForNewGame();
+        screenManager.goTo("base");
+      },
+      onSettings: () => {
+        // TODO: open settings screen
+      }
     }),
     base: new BaseScreen({
       backgroundImage: baseBackground,
       economyState,
       onNavigate: (target) => {
-        if (target === "missions") screenManager.goTo("region");
+        if (target === "missions") {
+          economyState.save();
+          screenManager.goTo("region");
+        }
       },
-      onBack: () => screenManager.goTo("menu"),
+      onBack: () => {
+        economyState.save();
+        screenManager.goTo("menu");
+      },
     }),
     region: new RegionMapScreen({
       backgroundImage: levelSelectBackground,
@@ -232,6 +276,7 @@ const screenManager = new ScreenManager({
         if (currentGameMode) {
           currentGameMode.reset();
         }
+        economyState.save();
         screenManager.goTo("base");
       },
     }),
