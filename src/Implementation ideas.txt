@@ -1,1 +1,3 @@
-Save game state to use ass mission setups
+1 Save game state to use ass mission setups
+2 Showing assets  on minimap
+3

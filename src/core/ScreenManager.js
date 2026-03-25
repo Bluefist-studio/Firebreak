@@ -89,6 +89,10 @@ export class ScreenManager {
     this.current?.handlePointerUp?.(evt);
   }
 
+  handleWindowBlur() {
+    this.current?.handleWindowBlur?.();
+  }
+
   handleKeyDown(evt) {
     this.current?.handleKeyDown?.(evt);
   }

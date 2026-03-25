@@ -8,20 +8,22 @@ export class SkillHotbarHUD {
     this.baseGap = 8;
     this.baseBottomMargin = 15;
     
-    // Skill display order (1-9)
+    // Skill display order — keyboard skills left to right, then mouse-hold skills (Fire Crew, Fire Truck) after a gap
     this.skillKeys = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+    this.mouseSkillStart = 7;   // index in skillKeys where mouse-hold pair begins
+    this.baseMouseGroupGap = 28; // extra separation before mouse-hold group
 
     // Cooldown durations map
     this.cooldownDurations = {
-      1: { duration: 8, key: 'waterBomberCooldown' },
-      2: { duration: 0, key: null }, // Bulldozer uses energy system
-      3: { duration: 4, key: 'heliDropCooldown' },
+      1: { duration: 8,  key: 'waterBomberCooldown' },
+      2: { duration: 4,  key: 'heliDropCooldown' },
+      3: { duration: 0,  key: null }, // Bulldozer uses energy system
       4: { duration: 12, key: 'workerCrewCooldown' },
       5: { duration: 10, key: 'watchTowerCooldown' },
-      6: { duration: 2, key: 'fireCrewCooldown' },
-      7: { duration: 10, key: 'droneReconCooldown' },
-      8: { duration: 5, key: 'engineTruckCooldown' },
-      9: { duration: 20, key: 'reconPlaneCooldown' },
+      6: { duration: 10, key: 'droneReconCooldown' },
+      7: { duration: 20, key: 'reconPlaneCooldown' },
+      8: { duration: 0,  key: null }, // Fire Crew uses energy system, no cooldown timer
+      9: { duration: 0,  key: null }, // Fire Truck uses durability wear, no cooldown
     };
   }
 
@@ -34,8 +36,10 @@ export class SkillHotbarHUD {
     const buttonSize = Math.max(40, Math.round(this.baseButtonSize * scale));
     const gap = Math.max(6, Math.round(this.baseGap * scale));
     const bottomMargin = Math.max(10, Math.round(this.baseBottomMargin * scale));
+    const mouseGroupGap = Math.max(18, Math.round(this.baseMouseGroupGap * scale));
+    const mouseStart = this.mouseSkillStart;
     const skillCount = this.skillKeys.length;
-    const totalWidth = (buttonSize * skillCount) + (gap * (skillCount - 1));
+    const totalWidth = (buttonSize * skillCount) + (gap * (skillCount - 1)) + mouseGroupGap;
 
     // Calculate HUD position (centered at bottom)
     const hudX = (canvasWidth - totalWidth) / 2;
@@ -43,7 +47,8 @@ export class SkillHotbarHUD {
     
     for (let i = 0; i < this.skillKeys.length; i++) {
       const skillKey = this.skillKeys[i];
-      const buttonX = hudX + (i * (buttonSize + gap));
+      const extraOffset = i >= mouseStart ? mouseGroupGap : 0;
+      const buttonX = hudX + (i * (buttonSize + gap)) + extraOffset;
       const buttonY = hudY;
       
       if (x >= buttonX && x < buttonX + buttonSize &&
@@ -64,10 +69,10 @@ export class SkillHotbarHUD {
       this.gameState.waterBomberPreview = null;
     }
     if (skillKey !== 2) {
-      this.gameState.bulldozerActive = false;
+      this.gameState.heliDropMode = false;
     }
     if (skillKey !== 3) {
-      this.gameState.heliDropMode = false;
+      this.gameState.bulldozerActive = false;
     }
     if (skillKey !== 4) {
       this.gameState.workerCrewMode = false;
@@ -76,19 +81,15 @@ export class SkillHotbarHUD {
       this.gameState.watchTowerMode = false;
     }
     if (skillKey !== 6) {
-      this.gameState.fireCrewMode = null;
-      this.gameState.fireCrewStart = null;
-      this.gameState.fireCrewPreview = null;
-    }
-    if (skillKey !== 7) {
       this.gameState.droneReconMode = false;
       this.gameState.droneReconMoving = false;
     }
-    if (skillKey !== 8) {
-      this.gameState.engineTruckMode = false;
-    }
-    if (skillKey !== 9) {
+    if (skillKey !== 7) {
       this.gameState.reconPlaneMode = false;
+    }
+    // Fire crew (key 8) is always active via LMB — no mode flag to cancel
+    if (skillKey !== 9) {
+      this.gameState.engineTruckMode = false;
     }
 
     // Water Bomber (key 1): activate targeting directly
@@ -110,27 +111,14 @@ export class SkillHotbarHUD {
       return;
     }
 
-    // Bulldozer (key 2): toggle active mode (fuel-based)
+    // Heli Drop (key 2): activate targeting mode
     if (skillKey === 2) {
-      if (this.gameState.economyState && !this.gameState.isSkillFree() && this.gameState.economyState.fuel <= 0) {
-        this.gameState.skillMessage = "Bulldozer out of fuel";
-        this.gameState.skillMessageTimer = 2;
-        return;
-      }
-      this.gameState.bulldozerActive = !this.gameState.bulldozerActive;
-      this.gameState.skillMessage = this.gameState.bulldozerActive ? "Bulldozer ACTIVE" : "Bulldozer deactivated";
-      this.gameState.skillMessageTimer = 2;
-      return;
-    }
-
-    // Heli Drop (key 3): activate targeting mode
-    if (skillKey === 3) {
       if (this.gameState.heliDropCooldown > 0) {
         this.gameState.skillMessage = `Heli Drop cooldown: ${this.gameState.heliDropCooldown.toFixed(1)}s`;
         this.gameState.skillMessageTimer = 2;
         return;
       }
-      const heliCost = this.gameState.getSkillCost(this.gameState.skills[3]);
+      const heliCost = this.gameState.getSkillCost(this.gameState.skills[2]);
       if (this.gameState.money < heliCost) {
         this.gameState.skillMessage = "Not enough money";
         this.gameState.skillMessageTimer = 2;
@@ -138,6 +126,19 @@ export class SkillHotbarHUD {
       }
       this.gameState.heliDropMode = !this.gameState.heliDropMode;
       this.gameState.skillMessage = this.gameState.heliDropMode ? "Click to drop" : "Heli Drop canceled";
+      this.gameState.skillMessageTimer = 2;
+      return;
+    }
+
+    // Bulldozer (key 3): toggle active mode (fuel-based)
+    if (skillKey === 3) {
+      if (this.gameState.economyState && !this.gameState.isSkillFree() && this.gameState.economyState.fuel <= 0) {
+        this.gameState.skillMessage = "Bulldozer out of fuel";
+        this.gameState.skillMessageTimer = 2;
+        return;
+      }
+      this.gameState.bulldozerActive = !this.gameState.bulldozerActive;
+      this.gameState.skillMessage = this.gameState.bulldozerActive ? "Bulldozer ACTIVE" : "Bulldozer deactivated";
       this.gameState.skillMessageTimer = 2;
       return;
     }
@@ -180,33 +181,8 @@ export class SkillHotbarHUD {
       return;
     }
 
-    // Fire Crew (key 6): activate line targeting mode
+    // Drone Recon (key 6): deploy drone
     if (skillKey === 6) {
-      if (this.gameState.fireCrewCharges <= 0) {
-        if (this.gameState.fireCrewDeferredCount > 0) {
-          this.gameState.skillMessage = `Fire Crew working... (${this.gameState.fireCrewCharges}/${this.gameState.fireCrewMaxCharges})`;
-        } else {
-          this.gameState.skillMessage = `Fire Crew cooldown: ${this.gameState.fireCrewRechargeTimer.toFixed(1)}s (${this.gameState.fireCrewCharges}/${this.gameState.fireCrewMaxCharges})`;
-        }
-        this.gameState.skillMessageTimer = 2;
-        return;
-      }
-      if (this.gameState.fireCrewMode) {
-        this.gameState.fireCrewMode = null;
-        this.gameState.fireCrewStart = null;
-        this.gameState.fireCrewPreview = null;
-        this.gameState.skillMessage = "Fire Crew canceled";
-        this.gameState.skillMessageTimer = 2;
-        return;
-      }
-      this.gameState.fireCrewMode = "selectStart";
-      this.gameState.skillMessage = "Fire Crew: Click start of firebreak line";
-      this.gameState.skillMessageTimer = 2;
-      return;
-    }
-
-    // Drone Recon (key 7): deploy drone
-    if (skillKey === 7) {
       if (this.gameState.droneReconCooldown > 0) {
         this.gameState.skillMessage = `Drone Recon cooldown: ${this.gameState.droneReconCooldown.toFixed(1)}s`;
         this.gameState.skillMessageTimer = 2;
@@ -224,27 +200,8 @@ export class SkillHotbarHUD {
       return;
     }
 
-    // Fire Truck (key 8): deploy suppression zone
-    if (skillKey === 8) {
-      if (this.gameState.engineTruckCooldown > 0) {
-        this.gameState.skillMessage = `Fire Truck cooldown: ${this.gameState.engineTruckCooldown.toFixed(1)}s`;
-        this.gameState.skillMessageTimer = 2;
-        return;
-      }
-      if (this.gameState.engineTruckMode) {
-        this.gameState.engineTruckMode = false;
-        this.gameState.skillMessage = "Fire Truck canceled";
-        this.gameState.skillMessageTimer = 2;
-        return;
-      }
-      this.gameState.engineTruckMode = true;
-      this.gameState.skillMessage = "Click to deploy Fire Truck";
-      this.gameState.skillMessageTimer = 2;
-      return;
-    }
-
-    // Recon Plane (key 9): reveal large area on minimap
-    if (skillKey === 9) {
+    // Recon Plane (key 7): reveal large area on minimap
+    if (skillKey === 7) {
       if (this.gameState.reconPlaneCooldown > 0) {
         this.gameState.skillMessage = `Recon Plane cooldown: ${this.gameState.reconPlaneCooldown.toFixed(1)}s`;
         this.gameState.skillMessageTimer = 2;
@@ -258,6 +215,29 @@ export class SkillHotbarHUD {
       }
       this.gameState.reconPlaneMode = true;
       this.gameState.skillMessage = "Click to deploy Recon Plane";
+      this.gameState.skillMessageTimer = 2;
+      return;
+    }
+
+    // Fire Crew (key 8): show status info (always-on left click tool)
+    if (skillKey === 8) {
+      const pct = this.gameState.getFireCrewEnergyPercent?.() ?? 1;
+      this.gameState.skillMessage = pct > 0
+        ? `Fire Crew: ${Math.round(pct * 100)}% stamina — hold left click to cut`
+        : "Fire Crew exhausted — rest to recover";
+      this.gameState.skillMessageTimer = 2;
+      return;
+    }
+
+    // Fire Truck (key 9): show status (right-click hold IS the truck)
+    if (skillKey === 9) {
+      const dur = Math.round(this.gameState.economyState?.assetDurability?.engineTruck ?? 100);
+      if (dur <= 0) {
+        this.gameState.skillMessage = "Fire Truck: BROKEN — repair at base";
+        this.gameState.skillMessageTimer = 2;
+        return;
+      }
+      this.gameState.skillMessage = `Fire Truck: ${dur}% durability — hold right-click to suppress`;
       this.gameState.skillMessageTimer = 2;
       return;
     }
@@ -287,8 +267,10 @@ export class SkillHotbarHUD {
     const buttonSize = Math.max(40, Math.round(this.baseButtonSize * scale));
     const gap = Math.max(6, Math.round(this.baseGap * scale));
     const bottomMargin = Math.max(10, Math.round(this.baseBottomMargin * scale));
+    const mouseGroupGap = Math.max(18, Math.round(this.baseMouseGroupGap * scale));
+    const mouseStart = this.mouseSkillStart;
     const skillCount = this.skillKeys.length;
-    const totalWidth = (buttonSize * skillCount) + (gap * (skillCount - 1));
+    const totalWidth = (buttonSize * skillCount) + (gap * (skillCount - 1)) + mouseGroupGap;
 
     // Calculate HUD position (centered at bottom)
     const hudX = (canvasWidth - totalWidth) / 2;
@@ -297,7 +279,8 @@ export class SkillHotbarHUD {
     // Draw each skill button
     for (let i = 0; i < this.skillKeys.length; i++) {
       const skillKey = this.skillKeys[i];
-      const buttonX = hudX + (i * (buttonSize + gap));
+      const extraOffset = i >= mouseStart ? mouseGroupGap : 0;
+      const buttonX = hudX + (i * (buttonSize + gap)) + extraOffset;
       const buttonY = hudY;
       
       this._drawButton(ctx, buttonX, buttonY, skillKey, buttonSize, scale);
@@ -315,17 +298,17 @@ export class SkillHotbarHUD {
     // Check economy lock state (asset not unlocked, 0 durability, or crew unavailable)
     const isLocked = !this.gameState.isSkillFree() && this.gameState.economyState &&
       !this.gameState._isAssetUnlocked(this._skillKeyToAssetId(skillKey));
-    const isCrewSkill = skillKey === 5 || skillKey === 6 || skillKey === 7; // Fire Watch, Fire Crew, Drone Recon
-    const hasDurability = [1, 2, 3, 4, 8, 9].includes(skillKey); // Assets with durability tracking
+    const isCrewSkill = skillKey === 5 || skillKey === 6 || skillKey === 8; // Fire Watch, Drone Recon, Fire Crew
+    const hasDurability = [1, 2, 3, 4, 7, 9].includes(skillKey); // Assets with durability tracking
     const isDisabled = !isLocked && !this.gameState.isSkillFree() && this.gameState.economyState && (
       isCrewSkill
         ? !this.gameState.economyState.isCrewAvailable()
         : hasDurability && !this.gameState.economyState.isAssetAvailable(this._skillKeyToDurabilityId(skillKey))
     );
     
-    // Check retardant mode for skills 1 (Water Bomber) and 3 (Heli Drop)
+    // Check retardant mode for skills 1 (Water Bomber) and 2 (Heli Drop)
     const isRetardant = (skillKey === 1 && this.gameState.waterBomberUseRetardant && this.gameState.waterBomberMode) ||
-      (skillKey === 3 && this.gameState.heliDropUseRetardant && this.gameState.heliDropMode);
+      (skillKey === 2 && this.gameState.heliDropUseRetardant && this.gameState.heliDropMode);
 
     // Check resource availability for warning indicator
     const lowResources = !isLocked && !isDisabled && this._hasInsufficientResources(skillKey);
@@ -337,20 +320,49 @@ export class SkillHotbarHUD {
     ctx.fillRect(x, y, buttonSize, buttonSize);
     ctx.strokeRect(x, y, buttonSize, buttonSize);
     
-    // Handle bulldozer active indicator (skill 2)
-    if (skillKey === 2 && this.gameState.bulldozerActive) {
+    // Handle bulldozer active indicator (skill 3)
+    if (skillKey === 3 && this.gameState.bulldozerActive) {
       ctx.fillStyle = 'rgba(255, 200, 100, 0.2)';
       ctx.fillRect(x, y, buttonSize, buttonSize);
     }
+    // Fire crew is always the left-click tool — highlight when holding left
+    if (skillKey === 8 && this.gameState.player?.left) {
+      ctx.fillStyle = 'rgba(255, 200, 100, 0.2)';
+      ctx.fillRect(x, y, buttonSize, buttonSize);
+    }
+    // Fire Truck is the right-click tool — highlight when holding right
+    if (skillKey === 9 && this.gameState.player?.right) {
+      ctx.fillStyle = 'rgba(255, 120, 60, 0.25)';
+      ctx.fillRect(x, y, buttonSize, buttonSize);
+    }
 
-    // Bulldozer energy bar (skill 2)
-    if (skillKey === 2) {
+    // Fire crew energy bar (skill 8) — drawn above the feed bar
+    if (skillKey === 8) {
+      const energyPct = this.gameState.getFireCrewEnergyPercent?.() ?? 1;
+      if (energyPct < 1) {
+        const barW = buttonSize - 6;
+        const barH = Math.max(4, Math.round(5 * scale));
+        const barX = x + 3;
+        const barY = y + buttonSize - 2 * barH - 4; // above feed bar
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.fillRect(barX, barY, barW, barH);
+        const eColor = energyPct > 0.5 ? '#ffcc00' : energyPct > 0.25 ? '#ff8800' : '#ff2200';
+        ctx.fillStyle = eColor;
+        ctx.fillRect(barX, barY, barW * energyPct, barH);
+        ctx.strokeStyle = '#ffffff55';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(barX, barY, barW, barH);
+      }
+    }
+
+    // Bulldozer energy bar (skill 3) — drawn above the durability bar
+    if (skillKey === 3) {
       const energyPct = this.gameState.getBulldozerEnergyPercent?.() ?? 1;
       if (energyPct < 1) {
         const barW = buttonSize - 6;
         const barH = Math.max(4, Math.round(5 * scale));
         const barX = x + 3;
-        const barY = y + buttonSize - barH - 2;
+        const barY = y + buttonSize - 2 * barH - 4; // above durability bar
         // Background
         ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
         ctx.fillRect(barX, barY, barW, barH);
@@ -359,6 +371,45 @@ export class SkillHotbarHUD {
         ctx.fillStyle = eColor;
         ctx.fillRect(barX, barY, barW * energyPct, barH);
         // Border
+        ctx.strokeStyle = '#ffffff55';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(barX, barY, barW, barH);
+      }
+    }
+
+    // Durability bar for all vehicle/aircraft skills (keys 1, 2, 3, 4, 7, 9)
+    if ([1, 2, 3, 4, 7, 9].includes(skillKey) && this.gameState.economyState) {
+      const assetId = this._skillKeyToDurabilityId(skillKey);
+      const durPct = Math.min(1, Math.max(0, (this.gameState.economyState.assetDurability?.[assetId] ?? 100) / 100));
+      if (durPct < 1) {
+        const barW = buttonSize - 6;
+        const barH = Math.max(4, Math.round(5 * scale));
+        const barX = x + 3;
+        const barY = y + buttonSize - barH - 2;
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.fillRect(barX, barY, barW, barH);
+        const dColor = durPct > 0.5 ? '#44aaff' : durPct > 0.25 ? '#ff8800' : '#ff2200';
+        ctx.fillStyle = dColor;
+        ctx.fillRect(barX, barY, barW * durPct, barH);
+        ctx.strokeStyle = '#ffffff55';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(barX, barY, barW, barH);
+      }
+    }
+
+    // Feed (crewFedStatus) bar for crew skills (keys 5, 6, 8) — always at bottom
+    if ([5, 6, 8].includes(skillKey) && this.gameState.economyState) {
+      const fed = (this.gameState.economyState.crewFedStatus ?? 100) / 100;
+      if (fed < 1) {
+        const barW = buttonSize - 6;
+        const barH = Math.max(4, Math.round(5 * scale));
+        const barX = x + 3;
+        const barY = y + buttonSize - barH - 2;
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.fillRect(barX, barY, barW, barH);
+        const fColor = fed > 0.5 ? '#88dd44' : fed > 0.25 ? '#ffcc00' : '#ff3300';
+        ctx.fillStyle = fColor;
+        ctx.fillRect(barX, barY, barW * fed, barH);
         ctx.strokeStyle = '#ffffff55';
         ctx.lineWidth = 1;
         ctx.strokeRect(barX, barY, barW, barH);
@@ -419,18 +470,18 @@ export class SkillHotbarHUD {
         ctx.fillText(cooldownText, x + buttonSize / 2, y + buttonSize / 2);
       }
 
-      // Crew skill charge display (bottom-left corner)
+      // Crew skill charge display (top of card)
       if (isCrewSkill) {
         const chargeData = this._getCrewCharges(skillKey);
         if (chargeData) {
           const { charges, maxCharges, rechargeTimer } = chargeData;
-          const isDeferred = skillKey === 6 && this.gameState.fireCrewDeferredCount > 0;
-          const deferredCount = skillKey === 6 ? (this.gameState.fireCrewDeferredCount || 0) : 0;
-          // Draw charge pips
+          const isDeferred = skillKey === 8 && this.gameState.fireCrewDeferredCount > 0;
+          const deferredCount = skillKey === 8 ? (this.gameState.fireCrewDeferredCount || 0) : 0;
+          // Draw charge pips at top of card
           const pipSize = Math.max(6, Math.round(8 * scale));
           const pipGap = Math.max(2, Math.round(3 * scale));
           const pipsStartX = x + 3 * scale;
-          const pipsY = y + buttonSize - pipSize - 3 * scale;
+          const pipsY = y + 3 * scale;
           for (let p = 0; p < maxCharges; p++) {
             const px = pipsStartX + p * (pipSize + pipGap);
             if (p < charges) {
@@ -450,19 +501,19 @@ export class SkillHotbarHUD {
             ctx.lineWidth = 1;
             ctx.strokeRect(px, pipsY, pipSize, pipSize);
           }
-          // Show recharge timer and/or "working" indicator
+          // Show recharge timer below pips (left-aligned, top area)
           if (charges < maxCharges) {
             ctx.font = `${Math.max(7, Math.round(9 * scale))}px Arial`;
-            ctx.textAlign = 'right';
-            ctx.textBaseline = 'bottom';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
             const emptySlots = maxCharges - charges - deferredCount;
             if (emptySlots > 0 && rechargeTimer > 0) {
               ctx.fillStyle = '#88ffaa';
-              ctx.fillText(`${rechargeTimer.toFixed(1)}s`, x + buttonSize - 2 * scale, y + buttonSize - 2 * scale);
+              ctx.fillText(`${rechargeTimer.toFixed(1)}s`, x + 3 * scale, y + pipSize + 5 * scale);
             } else if (isDeferred) {
               const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 500);
               ctx.fillStyle = `rgba(255, 160, 40, ${pulse})`;
-              ctx.fillText('working', x + buttonSize - 2 * scale, y + buttonSize - 2 * scale);
+              ctx.fillText('work', x + 3 * scale, y + pipSize + 5 * scale);
             }
           }
         }
@@ -508,12 +559,16 @@ export class SkillHotbarHUD {
       ctx.fillText('LOW', x + buttonSize / 2, lowY + lowH / 2);
     }
 
-    // Hotkey number (top-right corner) - always on top
-    ctx.fillStyle = '#ffff00';
-    ctx.font = `bold ${Math.max(10, Math.round(14 * scale))}px Arial`;
+    // Hotkey label (top-right corner) - always on top
+    // Mouse-hold skills show their mouse button instead of a number
+    const hotkeyLabel = skillKey === 8 ? 'LMB' : skillKey === 9 ? 'RMB' : String(skillKey);
+    ctx.fillStyle = skillKey === 8 || skillKey === 9 ? '#88ddff' : '#ffff00';
+    ctx.font = skillKey === 8 || skillKey === 9
+      ? `bold ${Math.max(8, Math.round(10 * scale))}px Arial`
+      : `bold ${Math.max(10, Math.round(14 * scale))}px Arial`;
     ctx.textAlign = 'right';
     ctx.textBaseline = 'top';
-    ctx.fillText(String(skillKey), x + buttonSize - 4 * scale, y + 3 * scale);
+    ctx.fillText(hotkeyLabel, x + buttonSize - 4 * scale, y + 3 * scale);
 
     // Retardant badge (top-left corner) when retardant is active
     if (isRetardant) {
@@ -544,25 +599,25 @@ export class SkillHotbarHUD {
           const fuel = gs._hasUpgrade?.("bomberFuelEff") ? 6 : 8;
           return { text: `${fuel} Fuel`, color: '#ffaa44' };
         }
-        case 2: { // Bulldozer — fuel/tick
-          return { text: 'Fuel/s', color: '#ffaa44' };
-        }
-        case 3: { // Heli Drop — fuel
+        case 2: { // Heli Drop — fuel
           const fuel = gs._hasUpgrade?.("heliFuelEff") ? 4 : 5;
           return { text: `${fuel} Fuel`, color: '#ffaa44' };
+        }
+        case 3: { // Bulldozer — fuel/tick
+          return { text: 'Fuel/s', color: '#ffaa44' };
         }
         case 4: { // Sprinkler Trailer — durability wear
           const wear = gs._hasUpgrade?.("vehicleWear1") ? 1 : 2;
           return { text: `${wear} Wear`, color: '#ff8888' };
         }
         case 5: // Fire Watch — feed
-        case 6: // Fire Crew — feed
-        case 7: // Drone Recon — feed
+        case 6: // Drone Recon — feed
+        case 8: // Fire Crew — feed
           return { text: '5% Feed', color: '#88ddff' };
-        case 8: // Fire Truck — fuel
-          return { text: '1 Fuel', color: '#ffaa44' };
-        case 9: // Recon Plane — money
+        case 7: // Recon Plane — money
           return { text: '$2,000', color: '#ffff00' };
+        case 9: // Fire Truck — durability/sec
+          return { text: 'Dur/s', color: '#ff8844' };
       }
     }
 
@@ -574,7 +629,7 @@ export class SkillHotbarHUD {
 
   // Map skill key to asset ID used by _isAssetUnlocked
   _skillKeyToAssetId(skillKey) {
-    const map = { 1: "waterBomber", 2: "bulldozer", 3: "heliDrop", 4: "sprinklerTrailer", 5: "fireWatch", 6: "fireCrew", 7: "droneRecon", 8: "engineTruck", 9: "reconPlane" };
+    const map = { 1: "waterBomber", 2: "heliDrop", 3: "bulldozer", 4: "sprinklerTrailer", 5: "fireWatch", 6: "droneRecon", 7: "reconPlane", 8: "fireCrew", 9: "engineTruck" };
     return map[skillKey] ?? "";
   }
 
@@ -582,15 +637,15 @@ export class SkillHotbarHUD {
   _getCrewCharges(skillKey) {
     const gs = this.gameState;
     if (skillKey === 5) return { charges: gs.watchTowerCharges, maxCharges: gs.watchTowerMaxCharges, rechargeTimer: gs.watchTowerRechargeTimer };
-    if (skillKey === 6) return { charges: gs.fireCrewCharges, maxCharges: gs.fireCrewMaxCharges, rechargeTimer: gs.fireCrewRechargeTimer };
-    if (skillKey === 7) return { charges: gs.droneReconCharges, maxCharges: gs.droneReconMaxCharges, rechargeTimer: gs.droneReconRechargeTimer };
+    if (skillKey === 6) return { charges: gs.droneReconCharges, maxCharges: gs.droneReconMaxCharges, rechargeTimer: gs.droneReconRechargeTimer };
+    if (skillKey === 8) return { charges: gs.fireCrewCharges, maxCharges: gs.fireCrewMaxCharges, rechargeTimer: gs.fireCrewRechargeTimer };
     return null;
   }
 
   // Map skill key to durability ID used by EconomyState.isAssetAvailable
   // Skills 5, 6, 7 (Fire Watch, Fire Crew, Drone Recon) are crew-type and use crewFedStatus instead
   _skillKeyToDurabilityId(skillKey) {
-    const map = { 1: "waterBomber", 2: "bulldozer", 3: "helicopter", 4: "sprinklerTrailer", 8: "engineTruck", 9: "reconPlane" };
+    const map = { 1: "waterBomber", 2: "helicopter", 3: "bulldozer", 4: "sprinklerTrailer", 7: "reconPlane", 9: "engineTruck" };
     return map[skillKey] ?? "";
   }
 
@@ -610,22 +665,22 @@ export class SkillHotbarHUD {
       }
     }
     if (skillKey === 2) {
-      // Bulldozer: fuel (needs at least 1)
-      if (e.fuel < 1) return true;
-    }
-    if (skillKey === 3) {
       // Heli Drop: fuel + optional retardant
       const fuelCost = gs._hasUpgrade?.("heliFuelEff") ? 4 : 5;
       if (e.fuel < fuelCost) return true;
       if (gs.heliDropUseRetardant && e.retardant < 2) return true;
     }
-    if (skillKey === 8) {
-      // Engine Truck: fuel
+    if (skillKey === 3) {
+      // Bulldozer: fuel (needs at least 1)
       if (e.fuel < 1) return true;
     }
-    if (skillKey === 9) {
+    if (skillKey === 7) {
       // Recon Plane: money
       if (e.money < 2000) return true;
+    }
+    if (skillKey === 9) {
+      // Fire Truck: warn when durability is getting low
+      if ((e.assetDurability?.engineTruck ?? 100) < 20) return true;
     }
     return false;
   }

@@ -7,11 +7,10 @@ export class FireControlModal {
     // Control state
     this.controls = {
       temperature: gameState.weather.temperature,
-      humidity: gameState.weather.humidity,
+      airHumidity: gameState.weather.airHumidity,
+      fuelHumidity: gameState.weather.fuelHumidity,
       windAngle: gameState.weather.windAngle,
       windStrength: gameState.weather.windStrength,
-      spreadInterval: gameState.fire.updateInterval,
-      baseSpreadChance: gameState.weather.baseSpreadChance,
     };
 
     this.buttons = [];
@@ -49,10 +48,10 @@ export class FireControlModal {
         side: "plus",
         row: 0,
       },
-      // Humidity row
+      // Air Humidity row
       {
-        label: "Humidity:",
-        key: "humidity",
+        label: "Air Humidity:",
+        key: "airHumidity",
         inc: -5,
         x: startX + 120,
         y: (y += rowHeight),
@@ -62,8 +61,8 @@ export class FireControlModal {
         row: 1,
       },
       {
-        label: "Humidity:",
-        key: "humidity",
+        label: "Air Humidity:",
+        key: "airHumidity",
         inc: 5,
         x: startX + 195,
         y: y,
@@ -71,6 +70,29 @@ export class FireControlModal {
         height: 20,
         side: "plus",
         row: 1,
+      },
+      // Fuel Humidity row
+      {
+        label: "Fuel Humidity:",
+        key: "fuelHumidity",
+        inc: -5,
+        x: startX + 120,
+        y: (y += rowHeight),
+        width: 24,
+        height: 20,
+        side: "minus",
+        row: 2,
+      },
+      {
+        label: "Fuel Humidity:",
+        key: "fuelHumidity",
+        inc: 5,
+        x: startX + 195,
+        y: y,
+        width: 24,
+        height: 20,
+        side: "plus",
+        row: 2,
       },
       // Wind Angle row
       {
@@ -82,7 +104,7 @@ export class FireControlModal {
         width: 24,
         height: 20,
         side: "minus",
-        row: 2,
+        row: 3,
       },
       {
         label: "Wind Angle:",
@@ -93,7 +115,7 @@ export class FireControlModal {
         width: 24,
         height: 20,
         side: "plus",
-        row: 2,
+        row: 3,
       },
       // Wind Strength row
       {
@@ -105,7 +127,7 @@ export class FireControlModal {
         width: 24,
         height: 20,
         side: "minus",
-        row: 3,
+        row: 4,
       },
       {
         label: "Wind Strength:",
@@ -116,7 +138,7 @@ export class FireControlModal {
         width: 24,
         height: 20,
         side: "plus",
-        row: 3,
+        row: 4,
       },
     ];
   }
@@ -124,11 +146,10 @@ export class FireControlModal {
   _getConstraints(key) {
     const constraints = {
       temperature: { min: -10, max: 50 },
-      humidity: { min: 10, max: 100 },
+      airHumidity: { min: 10, max: 80 },
+      fuelHumidity: { min: 10, max: 80 },
       windAngle: { min: 0, max: 360 },
       windStrength: { min: 1, max: 100 },
-      spreadInterval: { min: 0.3, max: 2 },
-      baseSpreadChance: { min: 0.001, max: 0.02 },
     };
     return constraints[key] || { min: 0, max: 100 };
   }
@@ -199,8 +220,10 @@ export class FireControlModal {
     // Apply to game state
     if (key === "temperature") {
       this.gameState.weather.temperature = newValue;
-    } else if (key === "humidity") {
-      this.gameState.weather.humidity = newValue;
+    } else if (key === "airHumidity") {
+      this.gameState.weather.airHumidity = newValue;
+    } else if (key === "fuelHumidity") {
+      this.gameState.weather.fuelHumidity = newValue;
     } else if (key === "windAngle") {
       this.gameState.weather.windAngle = newValue;
     } else if (key === "windStrength") {
@@ -208,10 +231,6 @@ export class FireControlModal {
       const currentIncrease = Math.floor((this.gameState.weather._elapsed || 0) / 600) * 10;
       this.gameState.weather._baseWindStrength = Math.max(1, newValue - currentIncrease);
       this.gameState.weather.windStrength = newValue;
-    } else if (key === "spreadInterval") {
-      this.gameState.fire.updateInterval = newValue;
-    } else if (key === "baseSpreadChance") {
-      this.gameState.weather.baseSpreadChance = newValue;
     }
   }
 
@@ -251,7 +270,7 @@ export class FireControlModal {
 
     // Expanded panel
     const boxWidth = 240;
-    const boxHeight = 160;
+    const boxHeight = 190;
 
     ctx.save();
     ctx.filter = "blur(3px)";
@@ -280,25 +299,32 @@ export class FireControlModal {
         format: (v) => `${v.toFixed(0)}°`,
       },
       {
-        label: "Humidity:",
-        key: "humidity",
+        label: "Air Humidity:",
+        key: "airHumidity",
         minusBtn: this.buttons[2],
         plusBtn: this.buttons[3],
         format: (v) => `${v.toFixed(0)}%`,
       },
       {
-        label: "Wind Angle:",
-        key: "windAngle",
+        label: "Fuel Humidity:",
+        key: "fuelHumidity",
         minusBtn: this.buttons[4],
         plusBtn: this.buttons[5],
+        format: (v) => `${v.toFixed(0)}%`,
+      },
+      {
+        label: "Wind Angle:",
+        key: "windAngle",
+        minusBtn: this.buttons[6],
+        plusBtn: this.buttons[7],
         format: (v) => `${v.toFixed(0)}°`,
       },
       {
         label: "Wind Strength:",
         key: "windStrength",
-        minusBtn: this.buttons[6],
-        plusBtn: this.buttons[7],
-        format: (v) => `${Math.round(v)}`,
+        minusBtn: this.buttons[8],
+        plusBtn: this.buttons[9],
+        format: (v) => `${Math.round(v)} km/h`,
       },
     ];
 

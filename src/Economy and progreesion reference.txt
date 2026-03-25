@@ -133,7 +133,7 @@ Rules:
 Repair rule:
 
 * **Repairs cost Parts only**
-* **1 Part = 5 durability restored**
+* **1 Part = 10 durability restored**
 * repairs can be **partial between missions**
 
 ---
@@ -753,7 +753,7 @@ These feel locked enough to build around:
 
 * Money is only spent before and after missions
 * Repairs cost Parts only
-* 1 Part = 5 durability restored
+* 1 Part = 10 durability restored
 * Fire Watch replaces Watch Tower
 * Fire Watch belongs to Crew Facilities
 * Fire Crew and Fire Watch both unlock at Crew Facilities Tier 1

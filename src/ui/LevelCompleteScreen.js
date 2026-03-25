@@ -46,11 +46,18 @@ export class LevelCompleteScreen {
     ctx.fillRect(0, 0, width, height);
     
     // Title
+    const isFailed = this.levelData?.isFailed;
+    const isEndless = this.levelData?.isEndless ?? false;
+    const currentDay = this.levelData?.currentDay ?? 0;
+
     ctx.fillStyle = "#ffffff";
     ctx.font = "bold 48px Arial";
     ctx.textAlign = "center";
-    const isFailed = this.levelData?.isFailed;
-    ctx.fillText(isFailed ? "Mission Failed" : "Level Complete!", width / 2, 80);
+    if (isEndless) {
+      ctx.fillText(isFailed ? `Day ${currentDay + 1} — Season Over!` : `Day ${currentDay + 1} Survived!`, width / 2, 80);
+    } else {
+      ctx.fillText(isFailed ? "Mission Failed" : "Level Complete!", width / 2, 80);
+    }
     
     // Stats
     if (this.levelData) {
@@ -68,11 +75,30 @@ export class LevelCompleteScreen {
       ctx.fillText(`Trees Saved: ${saved}`, width / 2, ly); ly += 50;
       ctx.fillText(`Trees Burnt: ${burnt} (${burnPct}%)`, width / 2, ly); ly += 50;
 
+      // Settlement status
+      const settlements = this.levelData.settlements ?? [];
+      if (settlements.length > 0) {
+        const safe = settlements.filter(s => !s.destroyed).length;
+        ctx.font = "bold 22px Arial";
+        ctx.fillStyle = safe === settlements.length ? "#8f8" : safe === 0 ? "#f44" : "#fa0";
+        ctx.fillText(`Settlements protected: ${safe} / ${settlements.length}`, width / 2, ly); ly += 35;
+        for (const s of settlements) {
+          ctx.font = "18px Arial";
+          ctx.fillStyle = s.destroyed ? "#f77" : "#8f8";
+          ctx.fillText(`  ${s.name}: ${s.destroyed ? "DESTROYED" : "Safe"}`, width / 2, ly); ly += 28;
+        }
+        ly += 10;
+      }
+
       if (isFailed) {
         ctx.fillStyle = "#f44";
         ctx.font = "bold 26px Arial";
-        const failThreshold = this.levelData.mission?.failBurnPercent ?? 0;
-        ctx.fillText(`Too much forest lost! (limit: ${failThreshold}%)`, width / 2, ly); ly += 40;
+        if (this.levelData.settlementFailed) {
+          ctx.fillText("A settlement was destroyed!", width / 2, ly); ly += 40;
+        } else {
+          const failThreshold = this.levelData.mission?.failBurnPercent ?? 0;
+          ctx.fillText(`Too much forest lost! (limit: ${failThreshold}%)`, width / 2, ly); ly += 40;
+        }
         ctx.fillStyle = "#aaa";
         ctx.font = "22px Arial";
         ctx.fillText("No reward earned.", width / 2, ly); ly += 40;
@@ -126,33 +152,53 @@ export class LevelCompleteScreen {
       }
     }
     
-    // Draw buttons — on failure only show Return to Base
+    // Draw buttons
     const centerX = width / 2;
-    const centerY = height / 2;
-    const btnY = centerY;
+    const btnY = height * 0.62;
     this.buttons = [];
 
-    this.buttons.push({
-      label: "Return to Base",
-      x: centerX - this.buttonWidth / 2,
-      y: btnY,
-      width: this.buttonWidth,
-      height: this.buttonHeight,
-      callback: () => this.onReturnToMenu?.(),
-    });
+    if (isEndless && !isFailed) {
+      // Primary: advance to next day
+      this.buttons.push({
+        label: "Next Day \u2192",
+        x: centerX - this.buttonWidth / 2,
+        y: btnY,
+        width: this.buttonWidth,
+        height: this.buttonHeight,
+        primary: true,
+        callback: () => this.onContinue?.(),
+      });
+      // Secondary: end season and return
+      this.buttons.push({
+        label: "End Season",
+        x: centerX - this.buttonWidth / 2,
+        y: btnY + this.buttonHeight + this.buttonSpacing,
+        width: this.buttonWidth,
+        height: this.buttonHeight,
+        primary: false,
+        callback: () => this.onReturnToMenu?.(),
+      });
+    } else {
+      this.buttons.push({
+        label: isEndless ? "End Season" : "Return to Base",
+        x: centerX - this.buttonWidth / 2,
+        y: btnY,
+        width: this.buttonWidth,
+        height: this.buttonHeight,
+        primary: true,
+        callback: () => this.onReturnToMenu?.(),
+      });
+    }
 
     for (const button of this.buttons) {
-      // Button background
-      ctx.fillStyle = "#4CAF50";
+      ctx.fillStyle = button.primary ? "#4CAF50" : "#555";
       ctx.fillRect(button.x, button.y, button.width, button.height);
 
-      // Button border
-      ctx.strokeStyle = "#ffffff";
+      ctx.strokeStyle = button.primary ? "#ffffff" : "#888";
       ctx.lineWidth = 2;
       ctx.strokeRect(button.x, button.y, button.width, button.height);
 
-      // Button text
-      ctx.fillStyle = "#ffffff";
+      ctx.fillStyle = button.primary ? "#ffffff" : "#bbb";
       ctx.font = "bold 18px Arial";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";

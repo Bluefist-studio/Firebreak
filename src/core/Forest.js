@@ -8,11 +8,12 @@ const TREE_STATES = {
 };
 
 export class Forest {
-  constructor({ width, height, treeCount, sprites = null }) {
+  constructor({ width, height, treeCount, sprites = null, defaultTreeType = "conifer" }) {
     this.width = width;
     this.height = height;
     this.treeCount = treeCount;
     this.sprites = sprites;
+    this.defaultTreeType = defaultTreeType;
 
     this.trees = [];
     this.grid = new SpatialGrid({ cellSize: 100 });
@@ -41,10 +42,13 @@ export class Forest {
         x,
         y,
         state: TREE_STATES.NORMAL,
+        treeType: this.defaultTreeType,
         timer: Math.random() * 2, // seconds (used for burn progression and wet duration)
         extinguishTimer: 0,
         cutTimer: 0,
         hasEverBurned: false,
+        spriteIndex: Math.floor(Math.random() * 4),
+        rotation: Math.random() * Math.PI * 2,
       };
       this.trees.push(tree);
       this.grid.add(tree);
@@ -113,7 +117,7 @@ export class Forest {
   }
 
   render(ctx) {
-    const TREE_SIZE = 16;
+    const TREE_SIZE = 32;
     
     // Get current camera transform
     const transform = ctx.getTransform();
@@ -134,7 +138,7 @@ export class Forest {
     const viewportWidth = canvasWidth / zoom + padding * 2;
     const viewportHeight = canvasHeight / zoom + padding * 2;
     
-    const canUseSprites = this.sprites && this.sprites.normal?.complete;
+    const canUseSprites = this.sprites && this.sprites.normal1?.complete;
     
     // Query only trees in visible viewport using spatial grid
     const visibleTrees = this.grid.queryRect(viewportX, viewportY, viewportWidth, viewportHeight);
@@ -142,13 +146,21 @@ export class Forest {
     for (const tree of visibleTrees) {
       if (canUseSprites) {
         const img =
-          tree.state === TREE_STATES.NORMAL ? this.sprites.normal :
+          tree.state === TREE_STATES.NORMAL ? this.sprites['normal' + (tree.spriteIndex + 1)] :
           tree.state === TREE_STATES.BURNING ? this.sprites.burning :
           tree.state === TREE_STATES.WET ? this.sprites.wet :
           this.sprites.burnt;
 
         if (img?.naturalWidth) {
-          ctx.drawImage(img, tree.x - TREE_SIZE / 2, tree.y - TREE_SIZE / 2, TREE_SIZE, TREE_SIZE);
+          if (tree.state === TREE_STATES.NORMAL && tree.rotation) {
+            ctx.save();
+            ctx.translate(tree.x, tree.y);
+            ctx.rotate(tree.rotation);
+            ctx.drawImage(img, -TREE_SIZE / 2, -TREE_SIZE / 2, TREE_SIZE, TREE_SIZE);
+            ctx.restore();
+          } else {
+            ctx.drawImage(img, tree.x - TREE_SIZE / 2, tree.y - TREE_SIZE / 2, TREE_SIZE, TREE_SIZE);
+          }
           continue;
         }
       }

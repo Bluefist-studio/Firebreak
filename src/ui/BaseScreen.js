@@ -44,6 +44,7 @@ export class BaseScreen {
     this._tooltipText = null;
     this._tooltipX = 0;
     this._tooltipY = 0;
+    this.resourceHover = null;
 
     // ── Tutorial state ──
     this._tutorialStep = 0;  // 0 = not started / complete
@@ -346,22 +347,6 @@ export class BaseScreen {
         textY += Math.round(14 * scale);
       }
 
-      // Unlocked assets indicator (wrapped)
-      if (available && building.tier >= 1) {
-        const assets = this._getAssetsForBuilding(key);
-        if (assets.length > 0) {
-          ctx.fillStyle = "#8f8";
-          const assetFont = `${Math.max(9, Math.round(11 * scale))}px Arial`;
-          ctx.font = assetFont;
-          const assetText = assets.join(", ");
-          const assetLines = this._wrapText(ctx, assetText, rect.w - 28);
-          let ay = rect.y + rect.h - 8 - assetLines.length * Math.round(13 * scale);
-          for (const line of assetLines) {
-            ctx.fillText(line, rect.x + 14, ay);
-            ay += Math.round(13 * scale);
-          }
-        }
-      }
     }
   }
 
@@ -493,17 +478,13 @@ export class BaseScreen {
 
     // Dynamic panel height based on upgrade count and asset info
     const upgradeRowH = Math.max(22, Math.round(26 * scale));
-    // Estimate extra height for CC info + asset stats
+    // Estimate extra height for CC info
     let extraInfoH = 0;
     if (this.selectedBuilding === "commandCenter") extraInfoH += 54;
-    const assetStatsPreview = this._getAssetStatsForBuilding(this.selectedBuilding);
-    if (assetStatsPreview.length > 0) {
-      extraInfoH += 16; // "Asset Info:" header
-      for (const stat of assetStatsPreview) {
-        extraInfoH += 14 + stat.lines.length * 13 + 2;
-      }
-    }
-    const baseH = Math.max(160, Math.round(180 * scale)) + extraInfoH;
+    // baseH tightly covers: header (title/tier/role up to infoY=100) + upgrade button + gap
+    const upgradeBtnH = Math.max(28, Math.round(34 * scale));
+    const hasUpgradeBtn = available && building.tier < building.maxTier;
+    const baseH = (hasUpgradeBtn ? (126 + upgradeBtnH) : 120) + 12 + extraInfoH;
     const upgradeListH = unpurchased.length > 0
       ? Math.round(28 * scale) + unpurchased.length * upgradeRowH
       : 0;
@@ -517,7 +498,11 @@ export class BaseScreen {
     const panelH = baseH + upgradeListH + feedCrewSectionH + repairSectionH;
     const panelW = Math.max(340, Math.round(540 * scale));
     const panelX = Math.round(this.layout.facilityPanel.x * w) - panelW / 2;
-    const panelY = Math.round(this.layout.facilityPanel.y * h);
+    const panelPad = 12;
+    const panelY = Math.min(
+      Math.round(this.layout.facilityPanel.y * h),
+      h - panelH - panelPad
+    );
 
     this._panelRect = { x: panelX, y: panelY, w: panelW, h: panelH };
 
@@ -577,17 +562,8 @@ export class BaseScreen {
     ctx.font = `${Math.max(11, Math.round(13 * scale))}px Arial`;
     ctx.fillText(info.role, panelX + 18, panelY + 66);
 
-    // Assets unlocked
-    const assets = this._getAssetsForBuilding(this.selectedBuilding);
-    if (assets.length > 0) {
-      ctx.fillStyle = "#8f8";
-      ctx.font = `${Math.max(11, Math.round(13 * scale))}px Arial`;
-      ctx.textAlign = "left";
-      ctx.fillText("Assets: " + assets.join(", "), panelX + 18, panelY + 90);
-    }
-
     // Command Center specific info (building slots + fallback funding)
-    let infoY = 110;
+    let infoY = 100;
     if (this.selectedBuilding === "commandCenter") {
       const builtCount = ["intelFacility", "vehicleBay", "helipad", "airfield"]
         .filter(id => this.economy.buildings[id].tier >= 1).length;
@@ -602,41 +578,6 @@ export class BaseScreen {
       ctx.fillStyle = "#aaa";
       ctx.fillText(`Loadout Slots: ${this.economy.loadoutSlots}`, panelX + 18, panelY + infoY);
       infoY += 24;
-    }
-
-    // Asset stats for this building
-    const assetStats = this._getAssetStatsForBuilding(this.selectedBuilding);
-    if (assetStats.length > 0) {
-      ctx.fillStyle = "#bbb";
-      ctx.font = `bold ${Math.max(10, Math.round(12 * scale))}px Arial`;
-      ctx.textAlign = "left";
-      ctx.fillText("Asset Info:", panelX + 18, panelY + infoY);
-      infoY += 20;
-      ctx.font = `${Math.max(9, Math.round(11 * scale))}px Arial`;
-      for (const stat of assetStats) {
-        ctx.fillStyle = "#ddd";
-        ctx.fillText(`${stat.name}:`, panelX + 22, panelY + infoY);
-        infoY += 16;
-        ctx.fillStyle = "#aaa";
-        for (const line of stat.lines) {
-          ctx.fillText(`  ${line}`, panelX + 26, panelY + infoY);
-          infoY += 15;
-        }
-        infoY += 4;
-      }
-    }
-
-    // Durability info for relevant assets
-    const durabilityAssets = this._getDurabilityAssetsForBuilding(this.selectedBuilding);
-    if (durabilityAssets.length > 0) {
-      ctx.font = `${Math.max(10, Math.round(12 * scale))}px Arial`;
-      for (const { name, id } of durabilityAssets) {
-        const dur = this.economy.assetDurability[id] ?? 0;
-        ctx.fillStyle = dur > 50 ? "#8f8" : dur > 25 ? "#ff8" : "#f88";
-        ctx.textAlign = "left";
-        ctx.fillText(`${name}: ${dur}/100 durability`, panelX + 18, panelY + infoY);
-        infoY += 24;
-      }
     }
 
     // Upgrade tier button
@@ -678,10 +619,10 @@ export class BaseScreen {
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(label, btnX + btnW / 2, btnY + btnH / 2);
-      infoY = btnY - panelY + btnH + 10;
+      infoY = btnY - panelY + btnH + 20;
     } else {
       this._upgradeBtn = null;
-      infoY += 10;
+      infoY += 20;
     }
 
     // ── Individual upgrades list ──
@@ -720,11 +661,7 @@ export class BaseScreen {
         ctx.font = `${Math.max(10, Math.round(12 * scale))}px Arial`;
         ctx.textAlign = "left";
         ctx.textBaseline = "top";
-        let labelText = upg.label;
-        if (needsPrereq) {
-          const prereqDef = this.economy.upgradeCatalog[prereq];
-          labelText += prereqDef ? ` (need ${prereqDef.label})` : "";
-        }
+        const labelText = upg.label;
         ctx.fillText(labelText, panelX + 22, ey + 3);
 
         // Cost (right-aligned)
@@ -745,33 +682,56 @@ export class BaseScreen {
     }
 
     // ── Feed Crew (inside Crew Facilities panel) ──
+    infoY += 10;
     this._feedCrewBtn = null;
     if (this.selectedBuilding === "crewFacilities") {
       const fed = this.economy.crewFedStatus;
       const canFeed = this.economy.food > 0 && fed < 100;
       const feedBtnW = panelW - 36;
-      const feedBtnH = Math.max(32, Math.round(40 * scale));
       const feedBtnX = panelX + 18;
-      const feedBtnY = panelY + infoY + 6;
-      this._feedCrewBtn = { x: feedBtnX, y: feedBtnY, w: feedBtnW, h: feedBtnH };
+      const feedBtnY = panelY + infoY;
+      this._feedCrewBtn = { x: feedBtnX, y: feedBtnY, w: feedBtnW, h: repairRowH };
 
-      ctx.fillStyle = canFeed ? "rgba(20, 40, 20, 0.85)" : "rgba(30, 30, 30, 0.7)";
+      ctx.fillStyle = "#ddd";
+      ctx.font = `bold ${Math.max(11, Math.round(13 * scale))}px Arial`;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
+      ctx.fillText("Feed Crew (1 Food = +20%)", panelX + 18, panelY + infoY);
+      infoY += Math.round(22 * scale);
+
+      const fy = panelY + infoY;
+      this._feedCrewBtn = { x: panelX + 18, y: fy, w: feedBtnW, h: repairRowH };
+
+      if (this.feedCrewHover && canFeed) {
+        ctx.fillStyle = "rgba(100, 200, 100, 0.15)";
+        ctx.beginPath();
+        ctx.roundRect(panelX + 14, fy - 1, feedBtnW + 8, repairRowH, 6);
+        ctx.fill();
+      }
+
+      ctx.fillStyle = canFeed ? "rgba(20, 25, 20, 0.85)" : "rgba(30, 30, 30, 0.85)";
       ctx.strokeStyle = fed >= 76 ? "#8f8" : fed >= 51 ? "#ff8" : fed >= 1 ? "#f88" : "#f44";
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.roundRect(feedBtnX, feedBtnY, feedBtnW, feedBtnH, 10);
+      ctx.roundRect(panelX + 18, fy, feedBtnW, repairRowH, 8);
       ctx.fill();
       ctx.stroke();
 
       ctx.fillStyle = canFeed ? "#fff" : "#888";
-      ctx.font = `bold ${Math.max(11, Math.round(13 * scale))}px Arial`;
-      ctx.textAlign = "center";
+      ctx.font = `bold ${Math.max(10, Math.round(12 * scale))}px Arial`;
+      ctx.textAlign = "left";
       ctx.textBaseline = "middle";
+      ctx.fillText("Crew", panelX + 26, fy + repairRowH / 2);
+
+      ctx.textAlign = "right";
+      ctx.fillStyle = fed >= 100 ? "#8f8" : canFeed ? "#ccc" : "#666";
+      ctx.font = `${Math.max(9, Math.round(11 * scale))}px Arial`;
       ctx.fillText(
-        `Crew: ${fed}%  ${canFeed ? "— Feed (1 Food = +20)" : fed >= 100 ? "(Full)" : "(No Food)"}`,
-        feedBtnX + feedBtnW / 2, feedBtnY + feedBtnH / 2
+        canFeed ? `${fed}% — Feed` : fed >= 100 ? "Full (100%)" : `${fed}% (No Food)`,
+        panelX + 18 + feedBtnW - 8, fy + repairRowH / 2
       );
-      infoY = feedBtnY - panelY + feedBtnH + 10;
+
+      infoY = (fy - panelY) + repairRowH + 20;
     }
 
     // ── Repair buttons (inside facility panel for that facility's assets) ──
@@ -781,13 +741,13 @@ export class BaseScreen {
       ctx.font = `bold ${Math.max(11, Math.round(13 * scale))}px Arial`;
       ctx.textAlign = "left";
       ctx.textBaseline = "top";
-      ctx.fillText("Repair (1 Part = 5 Durability)", panelX + 18, panelY + infoY);
+      ctx.fillText("Repair (1 Part = 10 Durability)", panelX + 18, panelY + infoY);
       infoY += Math.round(22 * scale);
 
       const rBtnW = panelW - 36;
       for (const asset of repairableAssets) {
         const ry = panelY + infoY;
-        const dur = this.economy.assetDurability[asset.id] ?? 0;
+        const dur = Math.round(this.economy.assetDurability[asset.id] ?? 0);
         const needsRepair = dur < 100;
         const canRepair = needsRepair && this.economy.parts > 0;
         const hovered = this.repairHover[asset.id];
@@ -913,63 +873,68 @@ export class BaseScreen {
       moreChoices1:      "Adds an extra mission choice when selecting missions.",
       moreChoices2:      "Adds another mission choice (stacks with I).",
       // Crew Facilities
-      fasterCutting:     "Fire Crew cuts firebreaks 40% faster.",
-      reducedUnderfed1:  "Reduces crew hunger cooldown penalty by 1s.",
-      reducedUnderfed2:  "Reduces crew hunger cooldown penalty by 1s more.",
-      foodStorage2:      "Increases food storage to 18. (CC Tier 2)",
-      foodStorage3:      "Increases food storage to 28. (CC Tier 3)",
-      crewAvail1:        "Adds +1 charge to Fire Crew, Fire Watch, and Drone Recon.",
-      crewAvail2:        "Adds +1 charge (stacks with I).",
-      fireWatchSight1:   "Fire Watch reveal radius +60.",
-      fireWatchSight2:   "Fire Watch reveal radius +60 more.",
-      crewRecovery:      "All crew cooldowns reduced by 25%.",
-      lowerFoodCons1:    "Reduces food wear from crew skills by 30%.",
-      lowerFoodCons2:    "Reduces food wear further (stacks with I).",
+      fasterCutting:     "Fire Crew cuts firebreaks 40% faster (cutTime ×0.6).",
+      reducedUnderfed1:  "Reduces all hunger penalties: drain speed, regen, and max stamina.",
+      reducedUnderfed2:  "Further reduces all hunger penalties (stacks with I).",
+      crewStamina1:      "Fire Crew stamina drains 10% slower (drain ×0.9).",
+      crewStamina2:      "Fire Crew stamina drains 10% slower again (stacks with I).",
+      crewRadius1:       "Fire Crew cutting radius +2 (12 → 14).",
+      crewRadius2:       "Fire Crew cutting radius +2 more (14 → 16).",
+      foodStorage2:      "Increases food storage to 18.",
+      foodStorage3:      "Increases food storage to 28.",
+      crewAvail1:        "Fire Watch and Drone Recon get +1 charge each.",
+      crewAvail2:        "Fire Watch and Drone Recon get +1 more charge each (stacks with I).",
+      fireWatchSight1:   "Fire Watch reveal radius +60 (220 → 280).",
+      fireWatchSight2:   "Fire Watch reveal radius +60 more (280 → 340).",
+      crewRecovery:      "Fire Watch and Drone Recon charge cooldowns reduced by 25% (×0.75).",
+      lowerFoodCons1:    "Crew skill food wear reduced by 25% (drain ×0.75).",
+      lowerFoodCons2:    "Crew skill food wear reduced by 25% again (stacks with I).",
       // Intel Facility
       weatherForecast:   "Enables weather forecast display during missions.",
-      droneRadius1:      "Drone Recon reveal radius +50.",
-      droneRadius2:      "Drone Recon reveal radius +50 more.",
-      droneDuration1:    "Drone Recon stays active 15s longer.",
-      droneDuration2:    "Drone Recon stays active 15s longer (stacks with I).",
-      droneControl:      "Drone moves 50% faster when repositioned.",
+      droneRadius1:      "Drone Recon reveal radius +50 (200 → 250).",
+      droneRadius2:      "Drone Recon reveal radius +50 more (250 → 300).",
+      droneDuration1:    "Drone Recon stays active 15s longer (45 → 60s).",
+      droneDuration2:    "Drone Recon stays active 15s longer again (60 → 75s).",
+      droneControl:      "Drone repositions 50% faster (speed ×1.5).",
       reconScanRadius:   "Recon Plane reveals a larger area.",
       reconDuration:     "Recon Plane reveal lasts longer.",
       perfectForecast:   "Shows exact wind and weather for the whole mission.",
       // Vehicle Bay
-      engineOutput:      "Fire Truck suppresses fire faster.",
-      engineMobility:    "Fire Truck has a larger action radius.",
-      engineRecharge:    "Fire Truck cooldown recharges faster.",
-      sprinklerRadius:   "Sprinkler Trailer covers a wider area.",
-      sprinklerDur:      "Sprinkler Trailer lasts longer before deactivating.",
-      sprinklerCooldown: "Sprinkler Trailer cooldown reduced.",
-      vehicleWear1:      "All vehicle wear reduced by 30%.",
-      vehicleWear2:      "All vehicle wear reduced further (stacks with I).",
-      vehicleFuelEff1:   "All vehicle fuel consumption reduced by 30%.",
-      vehicleFuelEff2:   "All vehicle fuel consumption reduced further (stacks).",
-      fuelStorage2:      "Increases fuel storage to 35. (CC Tier 2)",
-      fuelStorage3:      "Increases fuel storage to 50. (CC Tier 3)",
-      fuelStorage4:      "Increases fuel storage to 70. (CC Tier 4)",
-      partsStorage2:     "Increases parts storage to 18. (CC Tier 2)",
-      partsStorage3:     "Increases parts storage to 28. (CC Tier 3)",
-      dozerSpeed:        "Bulldozer clears ground faster.",
-      dozerLineWidth:    "Bulldozer cuts a wider firebreak.",
-      dozerRecharge:     "Bulldozer energy recharges faster.",
+      engineRadius:      "Fire Truck spray radius +35% (×1.35).",
+      engineSuppression: "Fire Truck wets trees 35% faster (sprayTime ×0.65).",
+      engineMobility:    "Fire Truck durability wear 50% slower (wear interval ×1.5).",
+      engineRecharge:    "Fire Truck durability wear 25% slower again (×1.25, stacks with I).",
+      sprinklerRadius:   "Sprinkler Trailer zone +30% wider (×1.3).",
+      sprinklerDur:      "Sprinkler Trailer active 4s longer (10 → 14s).",
+      sprinklerCooldown: "Sprinkler Trailer cooldown 30% shorter (×0.7).",
+      vehicleWear1:      "Bulldozer durability wear 30% slower (wear interval ×1.3).",
+      vehicleWear2:      "Bulldozer durability wear 30% slower again (stacks with I).",
+      vehicleFuelEff1:   "Bulldozer burns fuel 30% less often (interval 1s → 1.3s).",
+      vehicleFuelEff2:   "Bulldozer burns fuel even less often (interval 1.3s → 1.6s, stacks with I).",
+      fuelStorage2:      "Increases fuel storage to 35.",
+      fuelStorage3:      "Increases fuel storage to 50.",
+      fuelStorage4:      "Increases fuel storage to 70.",
+      partsStorage2:     "Increases parts storage to 18.",
+      partsStorage3:     "Increases parts storage to 28.",
+      dozerSpeed:        "Bulldozer clears firebreaks 40% faster (cutTime ×0.6).",
+      dozerLineWidth:    "Bulldozer cuts a wider firebreak (24 → 32).",
+      dozerRecharge:     "Bulldozer energy recharges 50% faster (×1.5).",
       // Helipad
-      heliFuelEff:       "Helicopter uses less fuel per deployment.",
-      heliDurability:    "Helicopter takes less wear per deployment.",
-      heliSuppression:   "Helicopter suppression covers a larger zone.",
-      heliTurnaround1:   "Helicopter turnaround time reduced.",
-      heliTurnaround2:   "Helicopter turnaround reduced further.",
+      heliFuelEff:       "Helicopter fuel cost per deployment halved (2 → 1).",
+      heliDurability:    "Helicopter wear per deployment halved (4 → 2).",
+      heliSuppression:   "Helicopter suppression radius +30% (×1.3).",
+      heliTurnaround1:   "Helicopter cooldown 20% shorter (×0.8).",
+      heliTurnaround2:   "Helicopter cooldown 20% shorter again (stacks with I).",
       // Airfield
-      bomberFuelEff:     "Water Bomber uses less fuel per sortie.",
-      bomberRetEff:      "Water Bomber uses less retardant per sortie.",
-      bomberDurability:  "Water Bomber takes less wear per sortie.",
-      bomberTurnaround:  "Water Bomber turnaround time reduced.",
-      retStorage2:       "Increases retardant storage to 14. (CC Tier 2)",
-      retStorage3:       "Increases retardant storage to 20. (CC Tier 3)",
-      retStorage4:       "Increases retardant storage to 28. (CC Tier 4)",
-      bomberDrop1:       "Water Bomber drop covers a larger area.",
-      bomberDrop2:       "Water Bomber drop area increased further.",
+      bomberFuelEff:     "Water Bomber fuel cost per sortie reduced (3 → 2).",
+      bomberRetEff:      "Water Bomber retardant cost per sortie halved (2 → 1).",
+      bomberDurability:  "Water Bomber wear per sortie reduced (5 → 3).",
+      bomberTurnaround:  "Water Bomber cooldown 30% shorter (×0.7).",
+      retStorage2:       "Increases retardant storage to 14.",
+      retStorage3:       "Increases retardant storage to 20.",
+      retStorage4:       "Increases retardant storage to 28.",
+      bomberDrop1:       "Water Bomber drop radius +25% (×1.25).",
+      bomberDrop2:       "Water Bomber drop radius +25% more (stacks with I).",
     };
     return tooltips[upgradeId] || null;
   }
@@ -991,8 +956,46 @@ export class BaseScreen {
     return lines;
   }
 
+  _getResourceTooltipLines(key) {
+    const lines = {
+      fuel: [
+        "Fuel — Powers the Bulldozer and aircraft.",
+        "Bulldozer: 1/sec while active.",
+        "Helicopter: 5/deployment.",
+        "Water Bomber: 8/sortie.",
+        "Runs out = vehicle/aircraft disabled until resupplied.",
+        "Storage upgrades available at Command Center.",
+      ],
+      retardant: [
+        "Retardant — Special chemical for air-drop suppression.",
+        "Helicopter (retardant mode): 2/drop.",
+        "Water Bomber (retardant mode): 4/sortie.",
+        "Retardant-treated trees stay wet longer than water alone.",
+        "Air units can also drop water at no retardant cost.",
+        "Storage upgrades available at Command Center.",
+      ],
+      food: [
+        "Food — Keeps your crew fed and effective.",
+        "Fire Crew drains fed status every 3s of active cutting.",
+        "Fire Watch and Drone Recon drain fed status each activation.",
+        "When fed status drops low, 1 food auto-replenishes it.",
+        "Underfed crew: higher stamina drain, slower regen,",
+        "  lower max stamina, and longer Watch/Drone cooldowns.",
+        "Storage upgrades available at Command Center.",
+      ],
+      parts: [
+        "Parts — Used to repair damaged vehicles and aircraft.",
+        "Each part repairs 10 durability on the selected asset.",
+        "Repair at the asset's facility between missions.",
+        "Destroyed assets cannot be used until repaired.",
+        "Storage upgrades available at Command Center.",
+      ],
+    };
+    return lines[key] || null;
+  }
+
   _drawTooltip(ctx, w, h, scale) {
-    if (!this._tooltipText || (!this.upgradeItemHover && !this.isUpgradeHover)) return;
+    if (!this._tooltipText || (!this.upgradeItemHover && !this.isUpgradeHover && !this.resourceHover && !this.hoveredBuilding)) return;
 
     const mx = this._tooltipX;
     const my = this._tooltipY;
@@ -1354,9 +1357,18 @@ export class BaseScreen {
       }
     }
 
-    // Shop hover
+    // Shop hover + resource tooltips
+    this.resourceHover = null;
     for (const key of ["fuel", "retardant", "food", "parts"]) {
-      this.shopHover[key] = this._hitTest(x, y, this._shopBtns[key]);
+      const hit = this._hitTest(x, y, this._shopBtns[key]);
+      this.shopHover[key] = hit;
+      if (hit) {
+        this.resourceHover = key;
+        this._tooltipLines = this._getResourceTooltipLines(key);
+        this._tooltipText = this._tooltipLines ? this._tooltipLines.join("\n") : null;
+        this._tooltipX = x;
+        this._tooltipY = y;
+      }
     }
 
     // Repair hover
@@ -1369,7 +1381,7 @@ export class BaseScreen {
 
     // Individual upgrade hover
     this.upgradeItemHover = null;
-    if (!this.isUpgradeHover) { this._tooltipText = null; this._tooltipLines = null; }
+    if (!this.isUpgradeHover && !this.resourceHover) { this._tooltipText = null; this._tooltipLines = null; }
     for (const [upgradeId, rect] of Object.entries(this._upgradeBtns)) {
       if (this._hitTest(x, y, rect)) {
         this.upgradeItemHover = upgradeId;
@@ -1387,6 +1399,21 @@ export class BaseScreen {
       const rect = this._getBuildingRect(key, w, h, scale);
       if (this._hitTest(x, y, rect)) {
         this.hoveredBuilding = key;
+        // Only show tooltip when the panel for this building is not already open
+        if (this.selectedBuilding !== key) {
+          const assetStats = this._getAssetStatsForBuilding(key);
+          if (assetStats.length > 0) {
+            const lines = [];
+            for (const asset of assetStats) {
+              lines.push(asset.name + ":");
+              for (const l of asset.lines) lines.push("  " + l);
+            }
+            this._tooltipLines = lines;
+            this._tooltipText = lines.join("\n");
+            this._tooltipX = x;
+            this._tooltipY = y;
+          }
+        }
         break;
       }
     }

@@ -75,6 +75,10 @@ export class PlayScreen {
         startingMoney = this.gameMode.getStartingMoney(scaledMission.startMoney);
       }
       
+      // Reset held mouse buttons so the new mission doesn't inherit a stuck right/left click
+      this.rightHeld = false;
+      this.leftHeld = false;
+
       this.gameState = new GameState({ mission: scaledMission, gameMode: this.gameMode, viewport, sprites: this.sprites, economyState: this.economyState });
       
       // Override money with calculated amount
@@ -114,7 +118,7 @@ export class PlayScreen {
       const burntCount = this.gameState.forest.burntCount || 0;
       const burnPercent = (burntCount / totalTrees) * 100;
       const failThreshold = this.currentMission?.failBurnPercent ?? 100;
-      const isFailed = burnPercent >= failThreshold;
+      const isFailed = burnPercent >= failThreshold || (this.gameState.settlementFailed ?? false);
       
       // Save the money for next level
       this.onLevelComplete?.(this.gameState.money);
@@ -147,6 +151,9 @@ export class PlayScreen {
         }
       }
       
+      // Persist money and state for endless/campaign modes
+      this.gameMode?.onLevelComplete?.(this.gameState.money);
+
       this.screenManager?.goTo("levelComplete", {
         mission: this.currentMission,
         saved: this.gameState.saved,
@@ -159,6 +166,10 @@ export class PlayScreen {
         foodWear: Math.ceil(this.gameState.foodWearAccumulated || 0),
         fuelConsumed: this.gameState.fuelConsumed || 0,
         retardantConsumed: this.gameState.retardantConsumed || 0,
+        isEndless: this.currentMission?.id === "fire_season",
+        currentDay: this.gameMode?.currentDay ?? 0,
+        settlements: this.gameState.settlements ?? [],
+        settlementFailed: this.gameState.settlementFailed ?? false,
       });
       return; // Don't continue updating
     }
@@ -264,12 +275,11 @@ export class PlayScreen {
       const inHeliDropMode = this.gameState?.heliDropMode;
       const inWorkerCrewMode = this.gameState?.workerCrewMode;
       const inWatchTowerMode = this.gameState?.watchTowerMode;
-      const inFireCrewMode = this.gameState?.fireCrewMode;
       const inDroneReconMode = this.gameState?.droneReconMode || this.gameState?.droneReconMoving;
       const inEngineTruckMode = this.gameState?.engineTruckMode;
       const inReconPlaneMode = this.gameState?.reconPlaneMode;
       
-      if (!selectedSkill && !inWaterBomberMode && !inHeliDropMode && !inWorkerCrewMode && !inWatchTowerMode && !inFireCrewMode && !inDroneReconMode && !inEngineTruckMode && !inReconPlaneMode) {
+      if (!selectedSkill && !inWaterBomberMode && !inHeliDropMode && !inWorkerCrewMode && !inWatchTowerMode && !inDroneReconMode && !inEngineTruckMode && !inReconPlaneMode) {
         // Check if clicking on an active drone to select it
         if (this.gameState?.droneReconActive?.length > 0 && evt.button === 0) {
           const worldX = x / (this.gameState.camera?.zoom || 1) + (this.gameState.camera?.x || 0);
@@ -283,11 +293,6 @@ export class PlayScreen {
             }
           }
         }
-        // Right-click deselects bulldozer if active
-        if (evt.button === 2 && this.gameState?.bulldozerActive) {
-          this.gameState.handlePointerDown(x, y, evt);
-          return;
-        }
         if (evt.button === 0) this.leftHeld = true;
         if (evt.button === 2) this.rightHeld = true;
       } else {
@@ -296,9 +301,15 @@ export class PlayScreen {
     }
   }
 
-  handlePointerMove(x, y) {
+  handlePointerMove(x, y, evt) {
     this.mouse.x = x;
     this.mouse.y = y;
+
+    // Sync button state from the browser's authoritative bitmask to prevent stuck buttons
+    if (evt) {
+      this.leftHeld  = (evt.buttons & 1) !== 0;
+      this.rightHeld = (evt.buttons & 2) !== 0;
+    }
 
     // Update bulldozer cursor position
     if (this.gameState?.bulldozerActive) {
@@ -340,15 +351,6 @@ export class PlayScreen {
       const worldY = cam.y + y / cam.zoom;
       this.gameState.droneReconMouseX = worldX;
       this.gameState.droneReconMouseY = worldY;
-    }
-
-    // Update engine truck targeting circle position
-    if (this.gameState?.engineTruckMode) {
-      const cam = this.gameState.camera;
-      const worldX = cam.x + x / cam.zoom;
-      const worldY = cam.y + y / cam.zoom;
-      this.gameState.engineTruckMouseX = worldX;
-      this.gameState.engineTruckMouseY = worldY;
     }
 
     // Update recon plane targeting circle position
@@ -407,8 +409,20 @@ export class PlayScreen {
   }
 
   handlePointerUp(evt) {
-    if (evt.button === 0) this.leftHeld = false;
-    if (evt.button === 2) this.rightHeld = false;
+    // Use the bitmask of still-held buttons for accuracy (handles multi-button release order)
+    if (evt) {
+      this.leftHeld  = (evt.buttons & 1) !== 0;
+      this.rightHeld = (evt.buttons & 2) !== 0;
+    } else {
+      if (evt?.button === 0) this.leftHeld = false;
+      if (evt?.button === 2) this.rightHeld = false;
+    }
+  }
+
+  handleWindowBlur() {
+    // Release all held mouse buttons when the window loses focus to prevent stuck states
+    this.rightHeld = false;
+    this.leftHeld = false;
   }
 
   _checkBurnFailure() {

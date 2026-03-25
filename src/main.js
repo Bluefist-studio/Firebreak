@@ -58,14 +58,20 @@ function resizeCanvas() {
 
 // Optional tree sprites (falls back to vector rendering if not loaded)
 const treeSprites = {
-  normal: new Image(),
+  normal1: new Image(),
+  normal2: new Image(),
+  normal3: new Image(),
+  normal4: new Image(),
   burning: new Image(),
   burnt: new Image(),
   wet: new Image(),
 };
 
 const spritePaths = {
-  normal: "./Media/normal_tree2.png",
+  normal1: "./Media/normal_tree1.png",
+  normal2: "./Media/normal_tree2.png",
+  normal3: "./Media/normal_tree3.png",
+  normal4: "./Media/normal_tree4.png",
   burning: "./Media/burning_tree2.png",
   burnt: "./Media/burnt_tree.png",
   wet: "./Media/suppresed_tree.png",
@@ -107,6 +113,14 @@ heloSprite.src = encodeURI("./Media/helo.png");
 // Bulldozer sprite
 const bulldozerSprite = new Image();
 bulldozerSprite.src = encodeURI("./Media/bulldozer.png");
+
+// Settlement sprite
+const settlementSprite = new Image();
+settlementSprite.src = encodeURI("./Media base/settlement.png");
+
+// Watch tower sprite
+const watchTowerSprite = new Image();
+watchTowerSprite.src = encodeURI("./Media/watch_tower2.png");
 
 // Game mode instances
 const trainingMode = new TrainingGroundMode();
@@ -222,7 +236,7 @@ const screenManager = new ScreenManager({
     }),
     play: new PlayScreen({
       canvas,
-      sprites: { ...treeSprites, bomber: bomberSprite, helo: heloSprite, bulldozer: bulldozerSprite },
+      sprites: { ...treeSprites, bomber: bomberSprite, helo: heloSprite, bulldozer: bulldozerSprite, settlement: settlementSprite, watchTower: watchTowerSprite },
       gameMode: trainingMode,
       economyState,
       onExitToMenu: () => screenManager.goTo("base"),
@@ -340,13 +354,18 @@ window.addEventListener("keydown", (evt) => {
   screenManager.handleKeyDown(evt);
 });
 
+// Release held mouse buttons when window loses focus (prevents stuck Fire Truck / Fire Crew)
+window.addEventListener("blur", () => {
+  screenManager.handleWindowBlur();
+});
+
 // Support mouse wheel zoom in/out in play screen
 window.addEventListener("wheel", (evt) => {
   const playScreen = screenManager.current;
   if (!playScreen || !(playScreen instanceof Object) || !playScreen.gameState) return;
 
-  const zoomStep = 0.0;
-  const minZoom = 1.75;
+  const zoomStep = 0.2;
+  const minZoom = 2.5;
   const maxZoom = 1.75;
   if (evt.deltaY > 0) {
     playScreen.gameState.camera.zoom = Math.max(minZoom, playScreen.gameState.camera.zoom - zoomStep);

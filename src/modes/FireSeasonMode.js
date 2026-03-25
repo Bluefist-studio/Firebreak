@@ -40,19 +40,39 @@ export class FireSeasonMode extends BaseMode {
   getScaledMission(baseMission) {
     const scaledMission = JSON.parse(JSON.stringify(baseMission));
 
-    // Randomize wind direction if enabled (8 cardinal directions: 360/8 = 45° increments)
+    // Randomize wind direction (8 cardinal directions)
     if (scaledMission.weather?.randomizeWind) {
       scaledMission.weather.windAngle = Math.floor(Math.random() * 8) * (Math.PI / 4);
     }
-    // Apply additional difficulty scaling on continues (skip on day 0)
-    if (this.currentDay > 0) {
-      const dayMultiplier = this.currentDay;
 
-      // Increase temperature
-      scaledMission.weather.temperature += dayMultiplier * 0.5;
+    const day = this.currentDay;
 
-      // Decrease humidity
-      scaledMission.weather.humidity = Math.max(10, scaledMission.weather.humidity - dayMultiplier * 1);
+    if (day > 0) {
+      // These two worsen every single day
+      if (scaledMission.fireBuildup) {
+        scaledMission.fireBuildup.buildupDuration = Math.max(0.5, scaledMission.fireBuildup.buildupDuration - 0.1);
+      }
+      scaledMission.failBurnPercent = Math.max(4, (scaledMission.failBurnPercent || 10) - 0.25);
+
+      // The remaining properties rotate — one changes per day (5-step cycle)
+      const slot = (day - 1) % 5;
+
+      if (slot === 0) {
+        // Big impact — one more ignition point every 5 days
+        scaledMission.fireStartCount = Math.min(5, (scaledMission.fireStartCount || 1) + 1);
+      } else if (slot === 1) {
+        // Huge impact — wind picks up
+        scaledMission.weather.windStrength = Math.min(90, scaledMission.weather.windStrength + 2);
+      } else if (slot === 2) {
+        // Huge impact — temperature rises
+        scaledMission.weather.temperature = Math.min(50, scaledMission.weather.temperature + 0.5);
+      } else if (slot === 3) {
+        // Huge impact — air dries out
+        scaledMission.weather.airHumidity = Math.max(10, scaledMission.weather.airHumidity - 1);
+      } else if (slot === 4) {
+        // Biggest impact — fuel moisture drops
+        scaledMission.weather.fuelHumidity = Math.max(10, scaledMission.weather.fuelHumidity - 1);
+      }
     }
 
     return scaledMission;

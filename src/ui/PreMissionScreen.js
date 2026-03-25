@@ -3,11 +3,14 @@
  * Displays weather forecast, terrain info, available assets, and resource summary.
  * Weather detail depends on purchased upgrades (weatherForecast, betterForecast, perfectForecast).
  */
+import { LowResourcesModal } from "./LowResourcesModal.js";
+
 export class PreMissionScreen {
   constructor({ economyState, onStart, onBack }) {
     this.economy = economyState;
     this.onStart = onStart;
     this.onBack = onBack;
+    this.lowResourcesModal = new LowResourcesModal();
 
     this.mission = null;
     this.gameMode = null;
@@ -18,6 +21,11 @@ export class PreMissionScreen {
     this.isBackHover = false;
     this._startBtn = null;
     this._backBtn = null;
+    
+    // Weather tooltip
+    this.mouseX = 0;
+    this.mouseY = 0;
+    this._weatherPanelBounds = null;
   }
 
   onEnter(payload) {
@@ -77,8 +85,12 @@ export class PreMissionScreen {
 
       ctx.fillStyle = "#ccc";
       ctx.font = `${Math.max(11, Math.round(13 * scale))}px Arial`;
-      ctx.fillText(mission.description || "", px + 14, y);
-      y += lineH;
+      const descriptionWidth = colW - 28; // 14px padding on each side
+      const descLines = this._wrapText(ctx, mission.description || "", descriptionWidth);
+      for (const line of descLines) {
+        ctx.fillText(line, px + 14, y);
+        y += lineH;
+      }
 
       // Difficulty
       const diffColors = { easy: "#4CAF50", medium: "#FFC107", hard: "#FF9800", "very hard": "#f44336" };
@@ -116,6 +128,7 @@ export class PreMissionScreen {
     leftY += Math.round(16 * scale);
 
     // ── Weather Forecast Panel ──
+    const weatherPanelStartY = leftY;
     leftY = this._drawPanel(ctx, leftX, leftY, colW, scale, "Weather Forecast", (px, py) => {
       let y = py;
       const lineH = Math.round(24 * scale);
@@ -152,14 +165,15 @@ export class PreMissionScreen {
         y += lineH;
 
         // Humidity
-        const hum = weather.humidity ?? 40;
+        const airHum = weather.airHumidity ?? 40;
+        const fuelHum = weather.fuelHumidity ?? 50;
         if (hasPerfectForecast) {
-          ctx.fillStyle = hum <= 20 ? "#f44" : hum <= 35 ? "#fa0" : "#8f8";
-          ctx.fillText(`Humidity: ${hum}%`, px + 14, y);
+          ctx.fillStyle = airHum <= 20 ? "#f44" : airHum <= 35 ? "#fa0" : "#8f8";
+          ctx.fillText(`AH: ${airHum}%  FH: ${fuelHum}%`, px + 14, y);
         } else if (hasWeatherForecast) {
-          const desc = hum <= 20 ? "Very Dry" : hum <= 35 ? "Dry" : hum <= 55 ? "Moderate" : "Humid";
-          ctx.fillStyle = hum <= 20 ? "#f44" : hum <= 35 ? "#fa0" : "#8f8";
-          ctx.fillText(`Humidity: ${desc}`, px + 14, y);
+          const desc = airHum <= 20 ? "Very Dry" : airHum <= 35 ? "Dry" : airHum <= 55 ? "Moderate" : "Humid";
+          ctx.fillStyle = airHum <= 20 ? "#f44" : airHum <= 35 ? "#fa0" : "#8f8";
+          ctx.fillText(`AH: ${desc}  FH: ${fuelHum}%`, px + 14, y);
         }
         y += lineH;
 
@@ -169,20 +183,20 @@ export class PreMissionScreen {
           const dirNames = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
           const angle = weather.windAngle ?? 0;
           const idx = Math.round(((angle % 360 + 360) % 360) / 45) % 8;
-          const windColor = windStr >= 0.5 ? "#f44" : windStr >= 0.3 ? "#fa0" : "#8f8";
+          const windColor = windStr >= 60 ? "#f44" : windStr >= 30 ? "#fa0" : "#8f8";
           ctx.fillStyle = windColor;
-          ctx.fillText(`Wind: ${(windStr * 100).toFixed(0)}% from ${dirNames[idx]}`, px + 14, y);
+          ctx.fillText(`Wind: ${Math.round(windStr)} km/h from ${dirNames[idx]}`, px + 14, y);
         } else if (hasBetterForecast) {
-          const desc = windStr >= 0.5 ? "Strong" : windStr >= 0.3 ? "Moderate" : windStr >= 0.1 ? "Light" : "Calm";
+          const desc = windStr >= 60 ? "Strong" : windStr >= 30 ? "Moderate" : windStr >= 10 ? "Light" : "Calm";
           const dirNames = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
           const angle = weather.windAngle ?? 0;
           const idx = Math.round(((angle % 360 + 360) % 360) / 45) % 8;
-          const windColor = windStr >= 0.5 ? "#f44" : windStr >= 0.3 ? "#fa0" : "#8f8";
+          const windColor = windStr >= 60 ? "#f44" : windStr >= 30 ? "#fa0" : "#8f8";
           ctx.fillStyle = windColor;
-          ctx.fillText(`Wind: ${desc}, direction ${dirNames[idx]}`, px + 14, y);
+          ctx.fillText(`Wind: ${desc} from ${dirNames[idx]}`, px + 14, y);
         } else if (hasWeatherForecast) {
-          const desc = windStr >= 0.5 ? "Strong" : windStr >= 0.3 ? "Moderate" : windStr >= 0.1 ? "Light" : "Calm";
-          const windColor = windStr >= 0.5 ? "#f44" : windStr >= 0.3 ? "#fa0" : "#8f8";
+          const desc = windStr >= 60 ? "Strong" : windStr >= 30 ? "Moderate" : windStr >= 10 ? "Light" : "Calm";
+          const windColor = windStr >= 60 ? "#f44" : windStr >= 30 ? "#fa0" : "#8f8";
           ctx.fillStyle = windColor;
           ctx.fillText(`Wind: ${desc}`, px + 14, y);
         }
@@ -217,6 +231,9 @@ export class PreMissionScreen {
       return y;
     });
 
+    // Store weather panel bounds for tooltip hover detection
+    this._weatherPanelBounds = { x: leftX, y: weatherPanelStartY, w: colW, h: leftY - weatherPanelStartY };
+
     // ── Right Column: Available Assets + Resources ──
     rightY = this._drawPanel(ctx, rightX, rightY, colW, scale, "Available Assets", (px, py) => {
       let y = py;
@@ -250,10 +267,10 @@ export class PreMissionScreen {
           color = "#777";
         } else if (asset.type === "crew") {
           const fed = e?.crewFedStatus ?? 100;
-          status = fed > 0 ? `Ready (Crew ${fed}%)` : "Crew Unavailable";
+          status = fed > 0 ? `${fed}% fed` : "Crew Unavailable";
           color = fed > 50 ? "#8f8" : fed > 0 ? "#ff8" : "#f44";
         } else if (asset.id) {
-          const dur = e?.assetDurability?.[asset.id] ?? 100;
+          const dur = Math.round(e?.assetDurability?.[asset.id] ?? 100);
           status = dur > 0 ? `${dur}/100 durability` : "Broken — repair at base";
           color = dur > 50 ? "#8f8" : dur > 25 ? "#ff8" : dur > 0 ? "#fa0" : "#f44";
         }
@@ -300,26 +317,9 @@ export class PreMissionScreen {
         ctx.fillStyle = r.color;
         ctx.textAlign = "right";
         ctx.fillText(r.value, px + colW - 14, y);
-        // Low resource warning
-        if (r.warn) {
-          ctx.fillStyle = "#ff4400";
-          ctx.font = `bold ${Math.max(10, Math.round(12 * scale))}px Arial`;
-          ctx.fillText(" ⚠ LOW", px + colW - 14 - ctx.measureText(r.value).width - 8, y);
-          ctx.font = `${Math.max(12, Math.round(14 * scale))}px Arial`;
-        }
         ctx.textAlign = "left";
         y += lineH;
       }
-
-      // Crew readiness
-      const fed = e?.crewFedStatus ?? 100;
-      ctx.fillStyle = "#eee";
-      ctx.fillText("Crew Readiness:", px + 14, y);
-      ctx.fillStyle = fed >= 76 ? "#8f8" : fed >= 51 ? "#ff8" : fed >= 1 ? "#f88" : "#f44";
-      ctx.textAlign = "right";
-      ctx.fillText(`${fed}%`, px + colW - 14, y);
-      ctx.textAlign = "left";
-      y += lineH;
 
       return y;
     });
@@ -384,6 +384,15 @@ export class PreMissionScreen {
     const startX = w / 2 + btnGap / 2;
     this._startBtn = { x: startX, y: btnY, w: btnW, h: btnH };
     this._drawBtn(ctx, startX, btnY, btnW, btnH, "Start Mission", this.isStartHover, scale, "#E67E22", "#A0522D");
+
+    // Render low resources modal on top
+    this.lowResourcesModal.render(ctx);
+
+    // Draw weather tooltip if hovering
+    const weather = this.mission?.weather || {};
+    if (this._hitTest(this.mouseX, this.mouseY, this._weatherPanelBounds)) {
+      this._drawWeatherTooltip(ctx, weather);
+    }
   }
 
   _drawBtn(ctx, x, y, w, h, label, hovered, scale, baseColor, darkColor) {
@@ -418,9 +427,33 @@ export class PreMissionScreen {
     return rect && x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
   }
 
+  _checkLowResources() {
+    const e = this.economy;
+    const warnings = [];
+    if ((e?.fuel ?? 0) < 5) warnings.push(`Fuel: ${e.fuel} / ${e.fuelCap}`);
+    if ((e?.retardant ?? 0) < 3) warnings.push(`Retardant: ${e.retardant} / ${e.retardantCap}`);
+    if ((e?.food ?? 0) < 3) warnings.push(`Food: ${e.food} / ${e.foodCap}`);
+    return warnings;
+  }
+
   handlePointerDown(x, y) {
+    // Modal takes priority if open
+    if (this.lowResourcesModal.isOpen) {
+      this.lowResourcesModal.handlePointerDown(x, y);
+      return;
+    }
+
     if (this._hitTest(x, y, this._startBtn)) {
-      this.onStart?.(this.modePayload);
+      const warnings = this._checkLowResources();
+      if (warnings.length > 0) {
+        this.lowResourcesModal.show(
+          warnings,
+          () => this.onStart?.(this.modePayload),  // Continue callback
+          () => {}  // Cancel does nothing (just closes modal)
+        );
+      } else {
+        this.onStart?.(this.modePayload);
+      }
       return;
     }
     if (this._hitTest(x, y, this._backBtn)) {
@@ -430,6 +463,9 @@ export class PreMissionScreen {
   }
 
   handlePointerMove(x, y) {
+    this.lowResourcesModal?.handlePointerMove(x, y);
+    this.mouseX = x;
+    this.mouseY = y;
     this.isStartHover = this._hitTest(x, y, this._startBtn);
     this.isBackHover = this._hitTest(x, y, this._backBtn);
   }
@@ -442,4 +478,95 @@ export class PreMissionScreen {
       this.onBack?.();
     }
   }
+
+  _wrapText(ctx, text, maxWidth) {
+    const words = text.split(" ");
+    const lines = [];
+    let currentLine = "";
+
+    for (const word of words) {
+      const testLine = currentLine ? currentLine + " " + word : word;
+      const metrics = ctx.measureText(testLine);
+      if (metrics.width > maxWidth && currentLine) {
+        lines.push(currentLine);
+        currentLine = word;
+      } else {
+        currentLine = testLine;
+      }
+    }
+    if (currentLine) lines.push(currentLine);
+    return lines;
+  }
+
+  _drawWeatherTooltip(ctx, weather) {
+    const tooltipX = this.mouseX + 20;
+    const tooltipY = this.mouseY - 20;
+    const tooltipPadding = 12;
+    const tooltipLineHeight = 18;
+    const tooltipMaxWidth = 280;
+
+    // Tooltip text
+    const tooltips = [
+      "⚡ WEATHER EFFECTS:",
+      "",
+      "🌡️ Temperature: Increases base",
+      "spread radius (hotter = faster)",
+      "",
+      "💨 Air Humidity: Affects ignition",
+      "chance (drier = easier to ignite)",
+      "",
+      "🪨 Fuel Humidity: Changes spread",
+      "speed & burn rate (drier = faster)",
+      "",
+      "💨 Wind: Creates directional bonus",
+      "for fire spread (strong = far spread)"
+    ];
+
+    // Measure tooltip
+    ctx.font = "12px Arial";
+    let maxTooltipWidth = 0;
+    for (const line of tooltips) {
+      const metrics = ctx.measureText(line);
+      maxTooltipWidth = Math.max(maxTooltipWidth, metrics.width);
+    }
+    const tooltipWidth = maxTooltipWidth + tooltipPadding * 2;
+    const tooltipHeight = tooltips.length * tooltipLineHeight + tooltipPadding * 2;
+
+    // Clamp tooltip position to screen
+    const safeX = Math.min(tooltipX, ctx.canvas.width - tooltipWidth - 10);
+    const safeY = Math.max(tooltipY - tooltipHeight, 10);
+
+    // Draw tooltip background
+    ctx.fillStyle = "rgba(30, 20, 10, 0.95)";
+    ctx.strokeStyle = "rgba(255, 140, 40, 0.8)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(safeX, safeY, tooltipWidth, tooltipHeight, 8);
+    ctx.fill();
+    ctx.stroke();
+
+    // Draw tooltip text
+    ctx.fillStyle = "#ffb060";
+    ctx.font = "bold 12px Arial";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+
+    let currentY = safeY + tooltipPadding;
+    for (const line of tooltips) {
+      if (line.startsWith("⚡") || line.startsWith("🌡️") || line.startsWith("💨") || line.startsWith("🪨")) {
+        ctx.fillStyle = "#ff8844";
+        ctx.font = "bold 12px Arial";
+      } else if (line === "") {
+        // Skip empty lines
+        currentY += tooltipLineHeight;
+        continue;
+      } else {
+        ctx.fillStyle = "#dddddd";
+        ctx.font = "12px Arial";
+      }
+      ctx.fillText(line, safeX + tooltipPadding, currentY);
+      currentY += tooltipLineHeight;
+    }
+  }
+
 }

@@ -2,6 +2,7 @@
  * EconomyState — persistent progression state that survives across missions.
  * Tracks money, resources, building tiers, upgrades, and asset unlocks.
  */
+import { SKILL_CONFIG as SC } from '../data/skillConfig.js';
 export class EconomyState {
   constructor() {
     // ── Money ──
@@ -21,7 +22,7 @@ export class EconomyState {
       fuel: 200,
       retardant: 500,
       food: 100,
-      parts: 400,
+      parts: 100,
     };
 
     // ── Storage cap tables (indexed by highest unlocked storage tier) ──
@@ -93,14 +94,18 @@ export class EconomyState {
       // Crew Facilities
       fasterCutting:    { building: "crewFacilities", tier: 2, cost: 6000,  label: "Faster Firebreak Cutting" },
       reducedUnderfed1: { building: "crewFacilities", tier: 2, cost: 7000,  label: "Reduced Underfed Effects I" },
-      crewAvail1:       { building: "crewFacilities", tier: 2, cost: 12000, label: "More Crew Availability I" },
+      crewAvail1:       { building: "crewFacilities", tier: 2, cost: 12000, label: "Watch & Drone Availability I" },
       fireWatchSight1:  { building: "crewFacilities", tier: 2, cost: 8000,  label: "Fire Watch Sight I" },
+      crewStamina1:     { building: "crewFacilities", tier: 2, cost: 7000,  label: "Improved Crew Stamina I" },
       crewRecovery:     { building: "crewFacilities", tier: 3, cost: 9000,  label: "Reduced Crew Recovery" },
       lowerFoodCons1:   { building: "crewFacilities", tier: 3, cost: 8000,  label: "Lower Food Consumption I" },
-      crewAvail2:       { building: "crewFacilities", tier: 4, cost: 18000, label: "More Crew Availability II" },
+      crewRadius1:      { building: "crewFacilities", tier: 3, cost: 9000,  label: "Wider Cutting Radius I" },
+      crewStamina2:     { building: "crewFacilities", tier: 3, cost: 10000, label: "Improved Crew Stamina II" },
+      crewAvail2:       { building: "crewFacilities", tier: 4, cost: 18000, label: "Watch & Drone Availability II" },
       reducedUnderfed2: { building: "crewFacilities", tier: 4, cost: 12000, label: "Reduced Underfed Effects II" },
       lowerFoodCons2:   { building: "crewFacilities", tier: 4, cost: 12000, label: "Lower Food Consumption II" },
       fireWatchSight2:  { building: "crewFacilities", tier: 4, cost: 12000, label: "Fire Watch Sight II" },
+      crewRadius2:      { building: "crewFacilities", tier: 4, cost: 14000, label: "Wider Cutting Radius II" },
 
       // Intel Facility
       weatherForecast:  { building: "intelFacility",  tier: 1, cost: 6000,  label: "Weather Forecast" },
@@ -114,18 +119,19 @@ export class EconomyState {
       perfectForecast:  { building: "intelFacility",  tier: 3, cost: 14000, label: "Perfect Weather Forecast" },
 
       // Vehicle Bay
-      engineOutput:     { building: "vehicleBay",     tier: 1, cost: 10000, label: "Fire Truck Suppression" },
-      engineMobility:   { building: "vehicleBay",     tier: 1, cost: 10000, label: "Fire Truck Radius" },
-      engineRecharge:   { building: "vehicleBay",     tier: 1, cost: 10000, label: "Fire Truck Faster Cooldown" },
+      engineRadius:     { building: "vehicleBay",     tier: 1, cost: 10000, label: "Fire Truck Radius" },
+      engineSuppression:{ building: "vehicleBay",     tier: 2, cost: 10000, label: "Fire Truck Suppression" },
+      engineMobility:   { building: "vehicleBay",     tier: 1, cost: 10000, label: "Fire Truck Durability I" },
+      engineRecharge:   { building: "vehicleBay",     tier: 1, cost: 10000, label: "Fire Truck Durability II" },
       sprinklerRadius:  { building: "vehicleBay",     tier: 2, cost: 8000,  label: "Sprinkler Radius" },
       sprinklerDur:     { building: "vehicleBay",     tier: 2, cost: 8000,  label: "Sprinkler Duration" },
       sprinklerCooldown:{ building: "vehicleBay",     tier: 2, cost: 9000,  label: "Sprinkler Cooldown Reduction" },
-      vehicleWear1:     { building: "vehicleBay",     tier: 2, cost: 9000,  label: "Reduced Vehicle Wear I" },
-      vehicleFuelEff1:  { building: "vehicleBay",     tier: 2, cost: 9000,  label: "Better Vehicle Fuel Efficiency I" },
+      vehicleWear1:     { building: "vehicleBay",     tier: 2, cost: 9000,  label: "Dozer Wear I" },
+      vehicleFuelEff1:  { building: "vehicleBay",     tier: 2, cost: 9000,  label: "Dozer Fuel Efficiency I" },
       dozerSpeed:       { building: "vehicleBay",     tier: 3, cost: 8000,  label: "Dozer Speed" },
       dozerLineWidth:   { building: "vehicleBay",     tier: 3, cost: 9000,  label: "Dozer Line Width" },
-      vehicleFuelEff2:  { building: "vehicleBay",     tier: 3, cost: 13000, label: "Better Vehicle Fuel Efficiency II" },
-      vehicleWear2:     { building: "vehicleBay",     tier: 3, cost: 13000, label: "Reduced Vehicle Wear II" },
+      vehicleFuelEff2:  { building: "vehicleBay",     tier: 3, cost: 13000, label: "Dozer Fuel Efficiency II" },
+      vehicleWear2:     { building: "vehicleBay",     tier: 3, cost: 13000, label: "Dozer Wear II" },
       dozerRecharge:    { building: "vehicleBay",     tier: 3, cost: 10000, label: "Dozer Recharge Speed" },
 
       // Helipad
@@ -294,7 +300,13 @@ export class EconomyState {
   }
 
   _getUpgradePrerequisite(upgradeId) {
-    // Match pattern: name ending in a digit > 2 requires the previous level
+    // Manual prerequisites for upgrades that don't follow the numeric suffix pattern
+    const manualPrereqs = {
+      engineSuppression: "engineRadius",
+    };
+    if (manualPrereqs[upgradeId]) return manualPrereqs[upgradeId];
+
+    // Match pattern: name ending in a digit > 1 requires the previous level
     const match = upgradeId.match(/^(.+?)(\d+)$/);
     if (!match) return null;
     const base = match[1];
@@ -328,11 +340,11 @@ export class EconomyState {
     const current = this.assetDurability[assetId];
     if (current === undefined || current >= 100) return 0;
     const maxRestore = 100 - current;
-    const durabilityFromParts = partsToSpend * 5; // 1 part = 5 durability
+    const durabilityFromParts = partsToSpend * 10; // 1 part = 10 durability
     const actual = Math.min(maxRestore, durabilityFromParts);
-    const partsUsed = Math.ceil(actual / 5);
+    const partsUsed = Math.ceil(actual / 10);
     this.parts -= partsUsed;
-    this.assetDurability[assetId] += partsUsed * 5;
+    this.assetDurability[assetId] += partsUsed * 10;
     if (this.assetDurability[assetId] > 100) this.assetDurability[assetId] = 100;
     return partsUsed;
   }
@@ -345,17 +357,65 @@ export class EconomyState {
 
   getCooldownModifier() {
     const fed = this.crewFedStatus;
+    const p = SC.crewFood.underfedPenalty;
     let mod = 0;
-    if (fed >= 76) mod = 0;
-    else if (fed >= 51) mod = 1;
-    else if (fed >= 26) mod = 3;
-    else if (fed >= 1) mod = 5;
-    else mod = 10; // 0 = crew starving, large cooldown penalty but still usable
+    if (fed >= 76) mod = p.tier0;
+    else if (fed >= 51) mod = p.tier1;
+    else if (fed >= 26) mod = p.tier2;
+    else if (fed >= 1)  mod = p.tier3;
+    else mod = p.tier4;
 
     // reducedUnderfed upgrades soften the penalty
     if (mod > 0 && this.upgrades.has("reducedUnderfed1")) mod = Math.max(0, mod - 1);
     if (mod > 0 && this.upgrades.has("reducedUnderfed2")) mod = Math.max(0, mod - 1);
     return mod;
+  }
+
+  // Returns a drain rate multiplier for fire crew stamina based on hunger level.
+  // Applied on top of the base drain rate; >1.0 means crew tires faster when underfed.
+  getFireCrewDrainMultiplier() {
+    const fed = this.crewFedStatus;
+    let penalty = 0;
+    if (fed >= 76) penalty = 0;
+    else if (fed >= 51) penalty = 0.2;  // +20% drain
+    else if (fed >= 26) penalty = 0.45; // +45% drain
+    else if (fed >= 1)  penalty = 0.7;  // +70% drain
+    else                penalty = 1.0;  // +100% drain (starving)
+
+    // reducedUnderfed upgrades also soften the drain penalty
+    if (penalty > 0 && this.upgrades.has("reducedUnderfed1")) penalty = Math.max(0, penalty - 0.1);
+    if (penalty > 0 && this.upgrades.has("reducedUnderfed2")) penalty = Math.max(0, penalty - 0.1);
+    return 1.0 + penalty;
+  }
+
+  // Returns a recharge rate multiplier; <1.0 means crew recovers slower when underfed.
+  getFireCrewRechargeMultiplier() {
+    const fed = this.crewFedStatus;
+    let mult;
+    if (fed >= 76) mult = 1.0;
+    else if (fed >= 51) mult = 0.8;  // -20% regen
+    else if (fed >= 26) mult = 0.55; // -45% regen
+    else if (fed >= 1)  mult = 0.35; // -65% regen
+    else                mult = 0.2;  // -80% regen (starving)
+
+    if (mult < 1.0 && this.upgrades.has("reducedUnderfed1")) mult = Math.min(1.0, mult + 0.05);
+    if (mult < 1.0 && this.upgrades.has("reducedUnderfed2")) mult = Math.min(1.0, mult + 0.05);
+    return mult;
+  }
+
+  // Returns a max-energy multiplier; <1.0 means total stamina pool is smaller when underfed.
+  getFireCrewMaxEnergyMultiplier() {
+    const fed = this.crewFedStatus;
+    let mult;
+    if (fed >= 76) mult = 1.0;
+    else if (fed >= 51) mult = 0.9;   // -10% max
+    else if (fed >= 26) mult = 0.75;  // -25% max
+    else if (fed >= 1)  mult = 0.55;  // -45% max
+    else                mult = 0.4;   // -60% max (starving)
+
+    if (mult < 1.0 && this.upgrades.has("reducedUnderfed1")) mult = Math.min(1.0, mult + 0.05);
+    if (mult < 1.0 && this.upgrades.has("reducedUnderfed2")) mult = Math.min(1.0, mult + 0.05);
+    return mult;
   }
 
   isCrewAvailable() {

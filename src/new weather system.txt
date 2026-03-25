@@ -1,0 +1,232 @@
+Implement a wildfire weather and fuel behavior system with the following variable roles:
+
+Temperature   = Base spread radius
+Air Humidity  = Base ignition chance
+Wind          = Directional spread radius only
+Fuel Humidity = Spread interval + small ignition bonus + burn speed modifier
+Tree Type     = Burn duration + ignition resistance
+
+The system must be easy to tune, readable in code, and built for later testing and balancing.
+
+==================================================
+CORE DESIGN
+==================================================
+
+Create a fire spread model where each burning tree uses:
+
+1. a base spread radius from Temperature
+2. a directional spread bonus from Wind
+3. an ignition chance from Air Humidity
+4. a spread interval, small ignition modifier, and burn speed modifier from Fuel Humidity
+5. a burn duration and ignition resistance from Tree Type
+
+There are only 2 tree types:
+- Conifer
+- Deciduous
+
+Do not add extra systems beyond this design.
+Do not add hidden weather logic.
+Do not let Wind affect ignition chance.
+Keep each variable role separate and clean.
+
+==================================================
+DATA TABLES
+==================================================
+
+Use these values as tunable constants.
+
+--------------------------------------------------
+TEMPERATURE -> BASE SPREAD RADIUS
+--------------------------------------------------
+
+10°C = 10 px
+16°C = 16 px
+22°C = 22 px
+28°C = 28 px
+34°C = 34 px
+40°C = 40 px
+50°C = 50 px
+
+Implement interpolation between values if needed.
+
+--------------------------------------------------
+AIR HUMIDITY -> BASE IGNITION MULTIPLIER
+--------------------------------------------------
+
+80% = 0.60
+70% = 0.75
+55% = 0.90
+40% = 1.00
+25% = 1.12
+10% = 1.22
+
+This is the main ignition multiplier.
+
+--------------------------------------------------
+WIND -> DIRECTIONAL SPREAD RADIUS BONUS
+--------------------------------------------------
+
+Wind 1–9   = +1 to +5 px
+Wind 10–30 = +5 to +15 px
+Wind 31–50 = +16 to +25 px
+Wind 51–70 = +26 to +35 px
+Wind 71–90 = +36 to +45 px
+Wind 91–100 = +46 to +50 px
+
+Wind only affects spread reach by direction.
+
+Directional application:
+- directly downwind = 100% of wind bonus
+- diagonal downwind = 70% of wind bonus
+- crosswind = 35% of wind bonus
+- diagonal upwind = 10% of wind bonus
+- directly upwind = 0% of wind bonus
+
+Do not let Wind modify ignition chance.
+
+--------------------------------------------------
+FUEL HUMIDITY -> SPREAD INTERVAL + SMALL IGNITION BONUS + BURN SPEED
+--------------------------------------------------
+
+80% = interval 2.0 s, ignition 0.90, burn speed 0.75
+65% = interval 1.6 s, ignition 0.95, burn speed 0.85
+50% = interval 1.2 s, ignition 1.00, burn speed 1.00
+35% = interval 0.9 s, ignition 1.05, burn speed 1.10
+20% = interval 0.7 s, ignition 1.10, burn speed 1.20
+10% = interval 0.5 s, ignition 1.15, burn speed 1.30
+
+Fuel Humidity should:
+- control how often spread checks occur
+- slightly modify ignition chance
+- modify burn speed once a tree is burning
+
+--------------------------------------------------
+TREE TYPE -> BURN DURATION + IGNITION RESISTANCE
+--------------------------------------------------
+
+Deciduous:
+- burn duration = 10 s
+- ignition resistance = 0.90
+
+Conifer:
+- burn duration = 7 s
+- ignition resistance = 1.10
+
+Interpretation:
+- Deciduous burns longer and is harder to ignite
+- Conifer burns faster and is easier to ignite
+
+==================================================
+IMPLEMENTATION RULES
+==================================================
+
+1. Each burning tree must store:
+- tree type
+- ignition time or burn timer
+- burn duration
+- current burn speed modifier
+- spread interval timer
+
+2. When a tree ignites:
+- assign burn duration from tree type
+- apply burn speed modifier from Fuel Humidity
+- compute actual burn duration if needed using:
+  actualBurnDuration = baseBurnDuration / burnSpeedModifier
+
+3. Each burning tree should attempt spread repeatedly during its burn life based on Fuel Humidity spread interval.
+
+4. Spread logic:
+- compute base spread radius from Temperature
+- compute directional wind bonus from Wind and spread direction
+- final spread radius = base radius + directional bonus
+
+5. Candidate trees inside the final spread radius may attempt ignition.
+
+6. Final ignition multiplier:
+finalIgnitionMultiplier =
+    airHumidityMultiplier
+  * fuelHumidityIgnitionMultiplier
+  * treeIgnitionResistance
+
+7. Add an ignition cap to avoid runaway stacking:
+finalIgnitionMultiplier = min(finalIgnitionMultiplier, 1.40)
+
+8. Use exposed constants or tables so balancing can be changed easily later.
+
+==================================================
+SUGGESTED STRUCTURE
+==================================================
+
+Create tuning/helper functions such as:
+
+getBaseSpreadRadiusFromTemperature(float temperatureC)
+getAirHumidityIgnitionMultiplier(float airHumidity)
+getWindRadiusBonus(int windSpeed)
+getDirectionalWindFactor(directionToTarget, windDirection)
+getFuelHumiditySpreadInterval(float fuelHumidity)
+getFuelHumidityIgnitionMultiplier(float fuelHumidity)
+getFuelHumidityBurnSpeedModifier(float fuelHumidity)
+getTreeBurnDuration(TreeType type)
+getTreeIgnitionResistance(TreeType type)
+
+Use interpolation where appropriate.
+
+==================================================
+SPREAD PROCESS
+==================================================
+
+For each burning tree:
+
+1. update burn timer
+2. if burn timer exceeds burn duration, stop burning
+3. update spread timer
+4. when spread timer reaches spread interval:
+   - reset spread timer
+   - calculate final spread radius
+   - collect nearby candidate trees
+   - for each candidate tree:
+       - calculate ignition multiplier
+       - roll ignition
+       - if success, ignite that tree
+
+==================================================
+TESTING / DEBUG
+==================================================
+
+Add debug output for:
+- temperature
+- air humidity
+- wind speed
+- fuel humidity
+- tree type
+- base spread radius
+- wind radius bonus
+- spread interval
+- ignition multiplier
+- burn duration after modifiers
+
+Make these easy to print or inspect so balancing can be tested quickly.
+
+==================================================
+IMPORTANT CONSTRAINTS
+==================================================
+
+- Do not invent extra realism systems.
+- Do not add spotting.
+- Do not add slope.
+- Do not add extra fuel classes.
+- Do not let Wind affect ignition chance.
+- Keep the code modular and easy to rebalance.
+- Build the system exactly around the variable-role split defined above.
+
+==================================================
+EXPECTED RESULT
+==================================================
+
+The implemented system should allow:
+- slow-moving but resistant fires
+- fast-moving and fast-burning fires
+- long-burning deciduous fire behavior
+- more volatile conifer fire behavior
+- directional wind-driven spread
+- weather and fuel settings that are easy to tune in missions
