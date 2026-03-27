@@ -35,7 +35,8 @@ export class FireSpreadSystem {
       tree.timer += step * burnSpeedMod;
 
       // Burn duration from tree type, modified by fuel humidity burn speed
-      const baseBurnDur = this.weather.getTreeBurnDuration(tree.treeType);
+      // Trees inside a settlement zone burn 3× longer (harder to lose)
+      const baseBurnDur = this.weather.getTreeBurnDuration(tree.treeType) * (tree.inSettlement ? 3 : 1);
       if (tree.timer >= baseBurnDur) {
         this.forest.setState(tree, "burnt");
         continue;

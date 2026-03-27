@@ -4,6 +4,9 @@
 // fuelHumidity    → spread interval + burn speed (80%=2.0s/×0.75 … 10%=0.5s/×1.30)
 // windStrength    → directional radius bonus (1=+1px … 100=+50px downwind)
 // defaultTreeType → "conifer" (7s burn, easier ignition) or "deciduous" (10s burn, harder ignition)
+// treeMix         → optional { conifer: %, deciduous: % } to blend the two types (percentages should sum to 100)
+//                   e.g. treeMix: { conifer: 25, deciduous: 75 } — overrides defaultTreeType per-tree
+//                   omit treeMix to use 100% defaultTreeType
 //
 // ── SETTLEMENT GUIDE ─────────────────────────────────────────
 // settlements     → array of { quadrant, radius, cornerOffset?, name? } objects
@@ -26,6 +29,7 @@ export const missions = [
     startMoney: 500,
     isTrainingGround: true,
     defaultTreeType: "conifer",
+    treeMix: { conifer: 75, deciduous: 25 },
     fireStartCount: 1,
     fireStartPattern: "center",
     fireStartQuadrants: ["NW", "NE", "SE", "SW"],
@@ -53,9 +57,10 @@ export const missions = [
     failBurnPercent: 10,
     width: 2200,
     height: 1400,
-    treeCount: 25000,
+    treeCount: 20000,
     startMoney: 200,
     defaultTreeType: "conifer",
+    treeMix: { conifer: 75, deciduous: 25 },
     fireStartCount: 1,
     fireStartPattern: "center",
     fireStartQuadrants: ["NW", "NE", "SE", "SW"],
@@ -86,12 +91,13 @@ export const missions = [
     treeCount: 70000,
     startMoney: 500,
     defaultTreeType: "conifer",
+    treeMix: { conifer: 75, deciduous: 25 },
     fireStartCount: 2,
     fireStartPattern: "random quadrant",
     fireStartQuadrants: ["NW", "NE", "SE", "SW"],
     settlements: [
-      { quadrant: "NE", radius: 150, cornerOffset: 0.75, radius: 150 },
-      { quadrant: "SW", radius: 150, cornerOffset: 0.75, radius: 150 },
+      { quadrant: "NE", radius: 150, cornerOffset: 0.75, sprite: "settlement3" },
+      { quadrant: "SW", radius: 150, cornerOffset: 0.75, sprite: "settlement5" },
     ],
     fireBuildup: {
       enabled: true,
@@ -120,12 +126,13 @@ export const missions = [
     treeCount: 50000,
     startMoney: 500,
     defaultTreeType: "conifer",
+    treeMix: { conifer: 75, deciduous: 25 },
     fireStartCount: 1,
     fireStartPattern: "center",
     fireStartQuadrants: ["NW", "NE", "SE", "SW"],
     settlements: [
-      { quadrant: "NE", radius: 150, cornerOffset: 0.75, radius: 150 },
-      { quadrant: "SW", radius: 150, cornerOffset: 0.75, radius: 150 },
+      { quadrant: "NE", radius: 150, cornerOffset: 0.75, sprite: "settlement3" },
+      { quadrant: "SW", radius: 150, cornerOffset: 0.75, sprite: "settlement5" },
     ],
     fireBuildup: {
       enabled: true,

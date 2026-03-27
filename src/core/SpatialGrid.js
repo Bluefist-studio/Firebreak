@@ -64,4 +64,12 @@ export class SpatialGrid {
 
     return out;
   }
+
+  remove(item) {
+    const key = this._key(item.x, item.y);
+    const bucket = this.cells.get(key);
+    if (!bucket) return;
+    const idx = bucket.indexOf(item);
+    if (idx !== -1) bucket.splice(idx, 1);
+  }
 }

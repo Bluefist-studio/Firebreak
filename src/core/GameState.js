@@ -17,7 +17,16 @@ export class GameState {
     this.heloSprite = sprites?.helo || null;
     this.bulldozerSprite = sprites?.bulldozer || null;
     this.settlementSprite = sprites?.settlement || null;
+    this.settlementSprites = {
+      settlement: sprites?.settlement || null,
+      settlement3: sprites?.settlement3 || null,
+      settlement5: sprites?.settlement5 || null,
+      settlement3_burning: sprites?.settlement3_burning || null,
+      settlement5_burning: sprites?.settlement5_burning || null,
+    };
     this.watchTowerSprite = sprites?.watchTower || null;
+    this.droneSprite = sprites?.drone || null;
+    this.forestFloorSprite = sprites?.forestFloor || null;
     this.started = false;
     this.over = false;
     this.timeSinceStart = 0;
@@ -36,6 +45,7 @@ export class GameState {
       treeCount: mission.treeCount,
       sprites: this.sprites,
       defaultTreeType: mission.defaultTreeType ?? "conifer",
+      treeMix: mission.treeMix ?? null,
     });
 
     this.fire = new FireSpreadSystem({ forest: this.forest, weather: this.weather });
@@ -47,6 +57,7 @@ export class GameState {
 
     this.money = mission.startMoney;
     this.saved = 0;
+    this.cutPositions = []; // World positions of removed (cut) trees for minimap display
 
     // Settlement objectives
     this.settlements = [];
@@ -592,7 +603,32 @@ export class GameState {
     ctx.scale(this.camera.zoom, this.camera.zoom);
     ctx.translate(-this.camera.x, -this.camera.y);
 
-    this.forest.render(ctx);
+    // Tiled forest floor background
+    if (this.forestFloorSprite?.complete && this.forestFloorSprite.naturalWidth > 0) {
+      const tw = this.forestFloorSprite.naturalWidth;
+      const th = this.forestFloorSprite.naturalHeight;
+      const startX = Math.floor(0 / tw) * tw;
+      const startY = Math.floor(0 / th) * th;
+      for (let ty = startY; ty < this.forest.height; ty += th) {
+        for (let tx = startX; tx < this.forest.width; tx += tw) {
+          ctx.drawImage(this.forestFloorSprite, tx, ty, tw, th);
+        }
+      }
+    } else {
+      ctx.fillStyle = "#2d4a2a";
+      ctx.fillRect(0, 0, this.forest.width, this.forest.height);
+    }
+
+    // Draw burnt trees first (background layer)
+    this.forest.renderBurntOnly(ctx);
+
+    // Draw all active watch tower zones (under living trees)
+    for (const zone of this.watchTowerZones) {
+      this._drawWatchTowerZone(ctx, zone);
+    }
+
+    // Draw non-burnt trees (will cover watch towers)
+    this.forest.renderNonBurnt(ctx);
 
     // Draw settlement zones
     if (this.settlements.length > 0) {
@@ -623,12 +659,7 @@ export class GameState {
       this._drawWorkerCrewZone(ctx);
     }
 
-    // Draw all active watch tower zones
-    for (const zone of this.watchTowerZones) {
-      this._drawWatchTowerZone(ctx, zone);
-    }
-
-    // Draw active drone recon zones
+    // Draw all active drone recon zones
     for (const drone of this.droneReconActive) {
       this._drawDroneReconZone(ctx, drone);
     }
@@ -1063,14 +1094,22 @@ export class GameState {
           this._setSkillMessage(`Water Bomber cooldown: ${this.waterBomberCooldown.toFixed(1)}s`);
           return;
         }
-        // If already in targeting mode, toggle water/retardant
+        // Three-state cycle: inactive → water mode → retardant mode → inactive
         if (this.waterBomberMode) {
-          this.waterBomberUseRetardant = !this.waterBomberUseRetardant;
-          const mode = this.waterBomberUseRetardant ? "Retardant" : "Water";
-          const warnToggle = this._getResourceWarning("waterBomber");
-          this._setSkillMessage(warnToggle ? `Water Bomber: ${mode} mode — ${warnToggle}` : `Water Bomber: ${mode} mode (press 1 to toggle)`);
+          if (this.waterBomberUseRetardant) {
+            // In retardant mode, deselect tool
+            this.waterBomberMode = null;
+            this.waterBomberUseRetardant = false;
+            this._setSkillMessage("Water Bomber canceled");
+          } else {
+            // In water mode, switch to retardant
+            this.waterBomberUseRetardant = true;
+            const warnToggle = this._getResourceWarning("waterBomber");
+            this._setSkillMessage(warnToggle ? `Water Bomber: Retardant mode — ${warnToggle}` : "Water Bomber: Retardant mode (press 1 to toggle)");
+          }
           return;
         }
+        // Activate in water mode
         this.waterBomberUseRetardant = false;
         this.waterBomberMode = "selectStart";
         const warn1 = this._getResourceWarning("waterBomber");
@@ -1078,7 +1117,7 @@ export class GameState {
         return;
       }
 
-      // Heli Drop (key 2): activate targeting mode
+      // Heli Drop (key 2): three-state cycle
       if (keyNum === 2) {
         if (!this._isAssetUnlocked("heliDrop")) {
           this._setSkillMessage("Helicopter not unlocked (need Helipad)");
@@ -1092,14 +1131,22 @@ export class GameState {
           this._setSkillMessage(`Heli Drop cooldown: ${this.heliDropCooldown.toFixed(1)}s`);
           return;
         }
-        // If already in targeting mode, toggle water/retardant
+        // Three-state cycle: inactive → water mode → retardant mode → inactive
         if (this.heliDropMode) {
-          this.heliDropUseRetardant = !this.heliDropUseRetardant;
-          const mode = this.heliDropUseRetardant ? "Retardant" : "Water";
-          const warnToggle3 = this._getResourceWarning("heliDrop");
-          this._setSkillMessage(warnToggle3 ? `Helicopter: ${mode} mode — ${warnToggle3}` : `Helicopter: ${mode} mode (press 2 to toggle)`);
+          if (this.heliDropUseRetardant) {
+            // In retardant mode, deselect tool
+            this.heliDropMode = false;
+            this.heliDropUseRetardant = false;
+            this._setSkillMessage("Helicopter canceled");
+          } else {
+            // In water mode, switch to retardant
+            this.heliDropUseRetardant = true;
+            const warnToggle3 = this._getResourceWarning("heliDrop");
+            this._setSkillMessage(warnToggle3 ? `Helicopter: Retardant mode — ${warnToggle3}` : "Helicopter: Retardant mode (press 2 to toggle)");
+          }
           return;
         }
+        // Activate in water mode
         this.heliDropUseRetardant = false;
         this.heliDropMode = true;
         const warn3 = this._getResourceWarning("heliDrop");
@@ -1717,19 +1764,25 @@ const steps = Math.ceil(dist / SC.waterBomber.sprayStepSize);
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Drone icon at center - small rotating marker
-    const pulse = 0.7 + 0.3 * Math.sin(performance.now() / 300);
-    ctx.fillStyle = `rgba(0, 200, 255, ${pulse})`;
-    ctx.beginPath();
-    ctx.arc(d.x, d.y, 5, 0, Math.PI * 2);
-    ctx.fill();
+    // Drone icon at center - sprite or fallback marker
+    if (this.droneSprite?.complete && this.droneSprite.naturalWidth > 0) {
+      const droneSize = 50;
+      ctx.drawImage(this.droneSprite, d.x - droneSize / 2, d.y - droneSize / 2, droneSize, droneSize);
+    } else {
+      // Fallback: small rotating marker with pulsing effect
+      const pulse = 0.7 + 0.3 * Math.sin(performance.now() / 300);
+      ctx.fillStyle = `rgba(0, 200, 255, ${pulse})`;
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, 5, 0, Math.PI * 2);
+      ctx.fill();
 
-    // Outer ring
-    ctx.strokeStyle = `rgba(0, 200, 255, ${0.3 + 0.2 * pulse})`;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.arc(d.x, d.y, 10, 0, Math.PI * 2);
-    ctx.stroke();
+      // Outer ring
+      ctx.strokeStyle = `rgba(0, 200, 255, ${0.3 + 0.2 * pulse})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, 10, 0, Math.PI * 2);
+      ctx.stroke();
+    }
 
     // If moving, draw a movement trail line
     const dx = d.targetX - d.x;
@@ -2099,7 +2152,8 @@ const steps = Math.ceil(dist / SC.waterBomber.sprayStepSize);
         if (!this.bulldozerActive && this._hasUpgrade("fasterCutting")) cutThreshold *= SC.fireCrew.cutTimeMultUpg;
         if (tree.cutTimer >= cutThreshold) {
           tree.wasCut = true;
-          this.forest.setState(tree, "burnt");
+          this.cutPositions.push({ x: tree.x, y: tree.y });
+          this.forest.removeTree(tree);
         }
         processed++;
       }
@@ -2148,9 +2202,9 @@ const steps = Math.ceil(dist / SC.waterBomber.sprayStepSize);
 
     // Watch tower zone circle - dashed border only, reduced alpha
     if (state === "active") {
-      ctx.strokeStyle = "rgba(255, 200, 0, 0.2)";
+      ctx.strokeStyle = "rgba(255, 200, 0, 0.5)";
     } else if (state === "burning") {
-      ctx.strokeStyle = "rgba(255, 100, 0, 0.4)";
+      ctx.strokeStyle = "rgba(255, 102, 0, 0.5)";
     }
     
     ctx.lineWidth = 1.5;
@@ -2162,9 +2216,10 @@ const steps = Math.ceil(dist / SC.waterBomber.sprayStepSize);
 
     // Center: sprite or fallback circle
     if (this.watchTowerSprite?.complete && this.watchTowerSprite.naturalWidth > 0) {
-      const imgSize = 60;
+      const watchTowerWidth = 80;
+      const watchTowerHeight = 60;
       ctx.globalAlpha = state === "burning" ? 0.6 : 1.0;
-      ctx.drawImage(this.watchTowerSprite, x - imgSize / 2, y - imgSize / 2, imgSize, imgSize);
+      ctx.drawImage(this.watchTowerSprite, x - watchTowerWidth / 2, y - watchTowerHeight / 2, watchTowerWidth, watchTowerHeight);
       ctx.globalAlpha = 1.0;
     } else {
       if (state === "active") {
@@ -2230,6 +2285,7 @@ const steps = Math.ceil(dist / SC.waterBomber.sprayStepSize);
         radius,
         quadrant: def.quadrant,
         name: def.name ?? `Settlement ${String.fromCharCode(65 + i)}`,
+        sprite: def.sprite ?? "settlement",
         totalTrees: 0,
         burnedTrees: 0,
         destroyed: false,
@@ -2251,12 +2307,13 @@ const steps = Math.ceil(dist / SC.waterBomber.sprayStepSize);
         const dx = tree.x - s.x;
         const dy = tree.y - s.y;
         if (dx * dx + dy * dy > rSq) continue;
+        tree.inSettlement = true;
         total++;
         if (tree.state === "burnt" || tree.state === "burning") burned++;
       }
       s.totalTrees = total;
       s.burnedTrees = burned;
-      if (total > 0 && burned / total >= 0.5) {
+      if (total > 0 && burned / total >= 0.75) {
         s.destroyed = true;
         this.settlementFailed = true;
         this.over = true;
@@ -2274,15 +2331,22 @@ const steps = Math.ceil(dist / SC.waterBomber.sprayStepSize);
       const inDanger = !s.destroyed && burnPct > 0.1;
 
       // Sprite first (drawn beneath the zone border)
-      if (this.settlementSprite?.complete && this.settlementSprite.naturalWidth > 0) {
-        const nw = this.settlementSprite.naturalWidth;
-        const nh = this.settlementSprite.naturalHeight;
+      // Switch to burning sprite as soon as any trees in the zone are burning
+      const isBurning = s.burnedTrees > 0;
+      let activeKey = s.sprite ?? "settlement";
+      if (isBurning) {
+        const burningKey = s.burningSprite ?? (s.sprite ? s.sprite + "_burning" : null);
+        const bSprite = burningKey ? this.settlementSprites?.[burningKey] : null;
+        if (bSprite?.complete && bSprite.naturalWidth > 0) activeKey = burningKey;
+      }
+      const sSprite = this.settlementSprites?.[activeKey] ?? this.settlementSprite;
+      if (sSprite?.complete && sSprite.naturalWidth > 0) {
+        const nw = sSprite.naturalWidth;
+        const nh = sSprite.naturalHeight;
         const scale = s.imageScale ?? 2;
         const imgW = s.radius * 2 * scale;
         const imgH = imgW * (nh / nw);
-        ctx.globalAlpha = s.destroyed ? 0.5 : 1.0;
-        ctx.drawImage(this.settlementSprite, s.x - imgW / 2, s.y - imgH / 2, imgW, imgH);
-        ctx.globalAlpha = 1.0;
+        ctx.drawImage(sSprite, s.x - imgW / 2, s.y - imgH / 2, imgW, imgH);
       } else {
         ctx.fillStyle = s.destroyed ? "rgba(255, 80, 80, 1)" : "rgba(255, 220, 60, 1)";
         ctx.beginPath();
@@ -2413,9 +2477,8 @@ const steps = Math.ceil(dist / SC.waterBomber.sprayStepSize);
     }
 
     // Draw cut (cleared) trees — visible only in revealed zones
-    for (let i = 0; i < this.forest.trees.length; i++) {
-      const t = this.forest.trees[i];
-      if (!t.wasCut) continue;
+    for (let i = 0; i < this.cutPositions.length; i++) {
+      const t = this.cutPositions[i];
       if (!this.showDebugInfo && !isRevealed(t.x, t.y)) continue;
       const tx = x + t.x * scaleX;
       const ty = y + t.y * scaleY;
@@ -2473,22 +2536,41 @@ const steps = Math.ceil(dist / SC.waterBomber.sprayStepSize);
       ctx.arc(sx, sy, 3, 0, Math.PI * 2);
       ctx.fill();
     }
+
+    // Fire Watch center points — always visible
+    for (const zone of this.watchTowerZones) {
+      const wzx = x + zone.x * scaleX;
+      const wzy = y + zone.y * scaleY;
+      ctx.fillStyle = zone.state === "active" ? "rgba(255, 200, 0, 1)" : "rgba(255, 100, 0, 1)";
+      ctx.beginPath();
+      ctx.arc(wzx, wzy, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   _drawActionRadiusIndicator(ctx) {
-    if (!this.player || (!this.player.left && !this.player.right)) return;
+    if (!this.player) return;
 
     const { x, y, left, right } = this.player;
 
+    // Determine if we should show radius: either holding down a button OR bulldozer is active (selected via key 3)
+    const isBulldozerSelected = this.bulldozerActive;
+    const isActivelyUsing = left || right;
+    
+    if (!isActivelyUsing && !isBulldozerSelected) return;
+
     // Use actual skill radii
     let radius;
-    if (left) {
+    let isDozers = false;
+    
+    if (isBulldozerSelected || left) {
+      isDozers = true;
       radius = this.bulldozerActive ? (this._hasUpgrade("dozerLineWidth") ? 32 : 24) : this.fireCrewRadius;
-      if (!this.bulldozerActive) {
+      if (!this.bulldozerActive && !isBulldozerSelected) {
         if (this._hasUpgrade("crewRadius1")) radius += 2;
         if (this._hasUpgrade("crewRadius2")) radius += 2;
       }
-    } else {
+    } else if (right) {
       radius = this.engineTruckRadius;
       if (this._hasUpgrade("engineRadius")) radius *= 1.35;
     }
@@ -2497,7 +2579,7 @@ const steps = Math.ceil(dist / SC.waterBomber.sprayStepSize);
     let actionColor;
     let actionType;
     
-    if (left) {
+    if (isDozers) {
       actionColor = "rgba(200, 80, 80, 0.3)"; // Red for cutting
       actionType = "CUT";
     } else if (right) {
@@ -2512,14 +2594,14 @@ const steps = Math.ceil(dist / SC.waterBomber.sprayStepSize);
     ctx.fill();
 
     // Draw circle outline
-    ctx.strokeStyle = left ? "rgba(255, 100, 100, 0.8)" : "rgba(100, 180, 255, 0.8)";
+    ctx.strokeStyle = isDozers ? "rgba(255, 100, 100, 0.8)" : "rgba(100, 180, 255, 0.8)";
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.stroke();
 
     // Draw center crosshair
-    ctx.strokeStyle = left ? "rgba(255, 100, 100, 0.6)" : "rgba(100, 180, 255, 0.6)";
+    ctx.strokeStyle = isDozers ? "rgba(255, 100, 100, 0.6)" : "rgba(100, 180, 255, 0.6)";
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(x - 8, y);
@@ -2528,23 +2610,25 @@ const steps = Math.ceil(dist / SC.waterBomber.sprayStepSize);
     ctx.lineTo(x, y + 8);
     ctx.stroke();
 
-    // Highlight affected trees
-    const candidates = this.forest.grid.queryCircle(x, y, radius);
-    for (const tree of candidates) {
-      const dx = tree.x - x;
-      const dy = tree.y - y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist > radius) continue;
+    // Highlight affected trees (only when actively using, not just when selected)
+    if (isActivelyUsing) {
+      const candidates = this.forest.grid.queryCircle(x, y, radius);
+      for (const tree of candidates) {
+        const dx = tree.x - x;
+        const dy = tree.y - y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > radius) continue;
 
-      // Check if this tree would be affected by current action
-      const canAffect = (left && (tree.state === "normal" || tree.state === "wet")) || (right && tree.state !== "wet" && tree.state !== "burnt");
-      
-      if (canAffect) {
-        // Draw highlight glow around tree
-        ctx.fillStyle = left ? "rgba(255, 150, 100, 0.4)" : "rgba(100, 200, 255, 0.4)";
-        ctx.beginPath();
-        ctx.arc(tree.x, tree.y, 8, 0, Math.PI * 2);
-        ctx.fill();
+        // Check if this tree would be affected by current action
+        const canAffect = (left && (tree.state === "normal" || tree.state === "wet")) || (right && tree.state !== "wet" && tree.state !== "burnt");
+        
+        if (canAffect) {
+          // Draw highlight glow around tree
+          ctx.fillStyle = left ? "rgba(255, 150, 100, 0.4)" : "rgba(100, 200, 255, 0.4)";
+          ctx.beginPath();
+          ctx.arc(tree.x, tree.y, 8, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
     }
   }
@@ -2589,8 +2673,8 @@ const steps = Math.ceil(dist / SC.waterBomber.sprayStepSize);
       ctx.translate(screenX, screenY);
       ctx.rotate(angle);
       
-      const spriteWidth = 100 * this.camera.zoom;
-      const spriteHeight = 130 * this.camera.zoom;
+      const spriteWidth = 300 * this.camera.zoom;
+      const spriteHeight = 330 * this.camera.zoom;
       ctx.drawImage(this.bomberSprite, -spriteWidth / 2, -spriteHeight / 2, spriteWidth, spriteHeight);
       
       ctx.restore();
@@ -2625,17 +2709,18 @@ const steps = Math.ceil(dist / SC.waterBomber.sprayStepSize);
     const screenX = (x - this.camera.x) * this.camera.zoom;
     const screenY = (y - this.camera.y) * this.camera.zoom;
 
-    // Draw helicopter as square with rotation
-    const heloSize = 100 * this.camera.zoom;
+    // Draw helicopter with rectangular sprite
+    const heloWidth = 200 * this.camera.zoom;
+    const heloHeight = 250 * this.camera.zoom;
 
     ctx.save();
     ctx.globalAlpha = opacity;
     ctx.translate(screenX, screenY);
     ctx.rotate(rotation);
 
-    // Draw helicopter sprite (square)
+    // Draw helicopter sprite (rectangular)
     if (this.heloSprite) {
-      ctx.drawImage(this.heloSprite, -heloSize / 2, -heloSize / 2, heloSize, heloSize);
+      ctx.drawImage(this.heloSprite, -heloWidth / 2, -heloHeight / 2, heloWidth, heloHeight);
     }
 
     ctx.restore();

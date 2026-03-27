@@ -1,5 +1,17 @@
 import { SpatialGrid } from "./SpatialGrid.js";
 
+//conifer: 
+// tree_normal1.png - tree_normal4.png
+// burning_tree2.png
+// burnt_tree.png
+// supressed_tree.png
+
+//deciduous:
+// tree_normal6.png, tree_normal8.png, tree_normal9.png
+// burning_tree1.png
+// burnt_tree2.png
+// supressed_tree2.png (same as conifer)
+
 const TREE_STATES = {
   NORMAL: "normal",
   BURNING: "burning",
@@ -8,12 +20,13 @@ const TREE_STATES = {
 };
 
 export class Forest {
-  constructor({ width, height, treeCount, sprites = null, defaultTreeType = "conifer" }) {
+  constructor({ width, height, treeCount, sprites = null, defaultTreeType = "conifer", treeMix = null }) {
     this.width = width;
     this.height = height;
     this.treeCount = treeCount;
     this.sprites = sprites;
     this.defaultTreeType = defaultTreeType;
+    this.treeMix = treeMix;
 
     this.trees = [];
     this.grid = new SpatialGrid({ cellSize: 100 });
@@ -38,17 +51,24 @@ export class Forest {
     for (let i = 0; i < this.treeCount; i++) {
       const x = Math.random() * this.width;
       const y = Math.random() * this.height;
+      let treeType;
+      if (this.treeMix) {
+        const coniferPct = this.treeMix.conifer ?? 100;
+        treeType = Math.random() * 100 < coniferPct ? "conifer" : "deciduous";
+      } else {
+        treeType = this.defaultTreeType;
+      }
+      const normalSpriteCount = treeType === "conifer" ? 4 : 3;
       const tree = {
         x,
         y,
         state: TREE_STATES.NORMAL,
-        treeType: this.defaultTreeType,
+        treeType,
         timer: Math.random() * 2, // seconds (used for burn progression and wet duration)
         extinguishTimer: 0,
         cutTimer: 0,
         hasEverBurned: false,
-        spriteIndex: Math.floor(Math.random() * 4),
-        rotation: Math.random() * Math.PI * 2,
+        spriteIndex: Math.floor(Math.random() * normalSpriteCount),
       };
       this.trees.push(tree);
       this.grid.add(tree);
@@ -103,6 +123,19 @@ export class Forest {
     }
   }
 
+  removeTree(tree) {
+    const idx = this.trees.indexOf(tree);
+    if (idx === -1) return;
+    this.trees.splice(idx, 1);
+    this.grid.remove(tree);
+    this.burningTrees.delete(tree);
+    if (tree.state === "normal") this.normalCount--;
+    else if (tree.state === "burning") this.burningCount--;
+    else if (tree.state === "burnt") this.burntCount--;
+    else if (tree.state === "wet") this.wetCount = Math.max(0, (this.wetCount || 0) - 1);
+    // Count toward everBurned for firebreak effect (tree was removed intentionally)
+  }
+
   update(dt) {
     // Wet trees dry out over time and become normal again.
     // Water = short suppression, Retardant = long suppression
@@ -116,8 +149,8 @@ export class Forest {
     }
   }
 
-  render(ctx) {
-    const TREE_SIZE = 32;
+  _renderTreesOfStates(ctx, includeStates) {
+    const TREE_SIZE = 28;
     
     // Get current camera transform
     const transform = ctx.getTransform();
@@ -138,34 +171,29 @@ export class Forest {
     const viewportWidth = canvasWidth / zoom + padding * 2;
     const viewportHeight = canvasHeight / zoom + padding * 2;
     
-    const canUseSprites = this.sprites && this.sprites.normal1?.complete;
+    const canUseSprites = this.sprites?.conifer?.normal[0]?.complete;
     
     // Query only trees in visible viewport using spatial grid
     const visibleTrees = this.grid.queryRect(viewportX, viewportY, viewportWidth, viewportHeight);
     
     for (const tree of visibleTrees) {
+      if (!includeStates.includes(tree.state)) continue;
+      
       if (canUseSprites) {
+        const typeSprites = this.sprites[tree.treeType] ?? this.sprites.conifer;
         const img =
-          tree.state === TREE_STATES.NORMAL ? this.sprites['normal' + (tree.spriteIndex + 1)] :
-          tree.state === TREE_STATES.BURNING ? this.sprites.burning :
-          tree.state === TREE_STATES.WET ? this.sprites.wet :
-          this.sprites.burnt;
+          tree.state === TREE_STATES.NORMAL ? typeSprites.normal[tree.spriteIndex] :
+          tree.state === TREE_STATES.BURNING ? typeSprites.burning :
+          tree.state === TREE_STATES.WET ? typeSprites.wet :
+          typeSprites.burnt;
 
         if (img?.naturalWidth) {
-          if (tree.state === TREE_STATES.NORMAL && tree.rotation) {
-            ctx.save();
-            ctx.translate(tree.x, tree.y);
-            ctx.rotate(tree.rotation);
-            ctx.drawImage(img, -TREE_SIZE / 2, -TREE_SIZE / 2, TREE_SIZE, TREE_SIZE);
-            ctx.restore();
-          } else {
-            ctx.drawImage(img, tree.x - TREE_SIZE / 2, tree.y - TREE_SIZE / 2, TREE_SIZE, TREE_SIZE);
-          }
+          ctx.drawImage(img, tree.x - TREE_SIZE / 2, tree.y - TREE_SIZE / 2, TREE_SIZE, TREE_SIZE);
           continue;
         }
       }
 
-      if (tree.state === TREE_STATES.NORMAL) ctx.fillStyle = "#2a7";
+      if (tree.state === TREE_STATES.NORMAL) ctx.fillStyle = tree.treeType === "deciduous" ? "#4b9" : "#2a7";
       else if (tree.state === TREE_STATES.BURNING) ctx.fillStyle = "#f53";
       else if (tree.state === TREE_STATES.WET) ctx.fillStyle = tree.retardant ? "#a3f" : "#3af";
       else ctx.fillStyle = "#444";
@@ -174,5 +202,17 @@ export class Forest {
       ctx.arc(tree.x, tree.y, TREE_SIZE / 2, 0, Math.PI * 2);
       ctx.fill();
     }
+  }
+
+  renderNonBurnt(ctx) {
+    this._renderTreesOfStates(ctx, [TREE_STATES.NORMAL, TREE_STATES.BURNING, TREE_STATES.WET]);
+  }
+
+  renderBurntOnly(ctx) {
+    this._renderTreesOfStates(ctx, [TREE_STATES.BURNT]);
+  }
+
+  render(ctx) {
+    this._renderTreesOfStates(ctx, [TREE_STATES.NORMAL, TREE_STATES.BURNING, TREE_STATES.WET, TREE_STATES.BURNT]);
   }
 }

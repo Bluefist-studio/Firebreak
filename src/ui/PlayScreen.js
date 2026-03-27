@@ -36,6 +36,12 @@ export class PlayScreen {
     // Game speed control
     this.gameSpeed = 1;
     this.speedLevels = [1, 2, 3, 5];
+
+    // End-of-mission overlay (shown in-place before navigating away)
+    this._missionOver = false;
+    this._missionOverPayload = null;
+    this._resultsMinimized = false;
+    this._resultsButtons = [];
   }
 
   onEnter(payload) {
@@ -46,6 +52,10 @@ export class PlayScreen {
       this.currentDay = payload.day ?? 0;
       this.levelCompleteHandled = false;
       this.gameSpeed = 1;
+      this._missionOver = false;
+      this._missionOverPayload = null;
+      this._resultsMinimized = false;
+      this._resultsButtons = [];
       
       const viewport = {
         width: this.canvas?.width ?? 1280,
@@ -154,7 +164,9 @@ export class PlayScreen {
       // Persist money and state for endless/campaign modes
       this.gameMode?.onLevelComplete?.(this.gameState.money);
 
-      this.screenManager?.goTo("levelComplete", {
+      this._missionOver = true;
+      this._resultsMinimized = false;
+      this._missionOverPayload = {
         mission: this.currentMission,
         saved: this.gameState.saved,
         burntCount: this.gameState.forest.burntCount,
@@ -170,8 +182,8 @@ export class PlayScreen {
         currentDay: this.gameMode?.currentDay ?? 0,
         settlements: this.gameState.settlements ?? [],
         settlementFailed: this.gameState.settlementFailed ?? false,
-      });
-      return; // Don't continue updating
+      };
+      return;
     }
 
     const cam = this.gameState.camera;
@@ -188,6 +200,9 @@ export class PlayScreen {
     cam.x = Math.max(0, Math.min(this.gameState.forest.width - viewW, cam.x));
     cam.y = Math.max(0, Math.min(this.gameState.forest.height - viewH, cam.y));
 
+    // If mission is over, allow panning but freeze all game logic
+    if (this._missionOver) return;
+
     const worldX = cam.x + this.mouse.x / cam.zoom;
     const worldY = cam.y + this.mouse.y / cam.zoom;
     this.gameState.setPlayerInput({
@@ -203,6 +218,12 @@ export class PlayScreen {
 
   render(ctx) {
     this.gameState?.render(ctx);
+
+    if (this._missionOver) {
+      this._renderEndOverlay(ctx);
+      return;
+    }
+
     this.topStatusHUD?.render(ctx);
     
     // Only show FireControlModal if mode allows it
@@ -230,6 +251,17 @@ export class PlayScreen {
   handlePointerDown(x, y, evt) {
     this.mouse.x = x;
     this.mouse.y = y;
+
+    // Handle end-of-mission overlay buttons first
+    if (this._missionOver) {
+      for (const btn of this._resultsButtons) {
+        if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
+          btn.callback();
+          return;
+        }
+      }
+      return;
+    }
 
     // If help modal is open, route input to it first and consume on click
     if (this.helpTooltipsModal?.isOpen) {
@@ -299,6 +331,137 @@ export class PlayScreen {
         this.gameState?.handlePointerDown(x, y, evt);
       }
     }
+  }
+
+  _renderEndOverlay(ctx) {
+    const W = ctx.canvas.width;
+    const H = ctx.canvas.height;
+    const p = this._missionOverPayload;
+    if (!p) return;
+
+    this._resultsButtons = [];
+
+    if (this._resultsMinimized) {
+      // Small "Show Results" chip at top-center
+      const bw = 180, bh = 36, bx = (W - bw) / 2, by = 12;
+      ctx.fillStyle = "rgba(0,0,0,0.7)";
+      ctx.fillRect(bx, by, bw, bh);
+      ctx.strokeStyle = "#aaa";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(bx, by, bw, bh);
+      ctx.fillStyle = "#fff";
+      ctx.font = "bold 15px Arial";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("▲  Show Results", bx + bw / 2, by + bh / 2);
+      this._resultsButtons.push({ x: bx, y: by, w: bw, h: bh, callback: () => { this._resultsMinimized = false; } });
+      return;
+    }
+
+    // Full results panel
+    const panelW = Math.min(480, W - 40);
+    const panelH = Math.min(520, H - 40);
+    const panelX = (W - panelW) / 2;
+    const panelY = (H - panelH) / 2;
+
+    ctx.fillStyle = "rgba(0,0,0,0.78)";
+    ctx.fillRect(panelX, panelY, panelW, panelH);
+    ctx.strokeStyle = p.isFailed ? "#f44" : "#4CAF50";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(panelX, panelY, panelW, panelH);
+
+    const cx = panelX + panelW / 2;
+    let ly = panelY + 36;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+
+    // Title
+    ctx.fillStyle = p.isFailed ? "#f66" : "#8f8";
+    ctx.font = "bold 30px Arial";
+    const title = p.isEndless
+      ? (p.isFailed ? `Day ${p.currentDay + 1} — Season Over!` : `Day ${p.currentDay + 1} Survived!`)
+      : (p.isFailed ? "Mission Failed" : "Level Complete!");
+    ctx.fillText(title, cx, ly); ly += 36;
+
+    ctx.fillStyle = "#ccc";
+    ctx.font = "18px Arial";
+    ctx.fillText(`Mission: ${p.mission?.name ?? ""}`, cx, ly); ly += 28;
+    ctx.fillText(`Trees Saved: ${p.saved}`, cx, ly); ly += 24;
+    ctx.fillText(`Trees Burnt: ${p.burntCount} (${p.burnPercent}%)`, cx, ly); ly += 24;
+
+    // Settlements
+    if (p.settlements?.length > 0) {
+      const safe = p.settlements.filter(s => !s.destroyed).length;
+      ctx.font = "bold 18px Arial";
+      ctx.fillStyle = safe === p.settlements.length ? "#8f8" : safe === 0 ? "#f44" : "#fa0";
+      ctx.fillText(`Settlements: ${safe} / ${p.settlements.length} protected`, cx, ly); ly += 22;
+      for (const s of p.settlements) {
+        ctx.font = "15px Arial";
+        ctx.fillStyle = s.destroyed ? "#f77" : "#8f8";
+        ctx.fillText(`${s.name}: ${s.destroyed ? "DESTROYED" : "Safe"}`, cx, ly); ly += 20;
+      }
+      ly += 6;
+    }
+
+    // Reward / failure note
+    if (p.isFailed) {
+      ctx.fillStyle = "#f44";
+      ctx.font = "bold 18px Arial";
+      ctx.fillText(p.settlementFailed ? "A settlement was destroyed!" : `Too much forest lost! (limit: ${p.mission?.failBurnPercent ?? 0}%)`, cx, ly); ly += 26;
+      ctx.fillStyle = "#aaa"; ctx.font = "16px Arial";
+      ctx.fillText("No reward earned.", cx, ly); ly += 24;
+    } else if (p.reward > 0) {
+      ctx.fillStyle = "#4CAF50"; ctx.font = "bold 22px Arial";
+      ctx.fillText(`Reward: $${p.reward.toLocaleString()}`, cx, ly); ly += 30;
+    }
+    if (p.fallbackGrant > 0) {
+      ctx.fillStyle = "#FFD54F"; ctx.font = "bold 18px Arial";
+      ctx.fillText(`Government Funding: +$${p.fallbackGrant.toLocaleString()}`, cx, ly); ly += 26;
+    }
+
+    // Resources
+    if (p.fuelConsumed > 0 || p.retardantConsumed > 0 || p.foodWear > 0) {
+      ly += 4;
+      ctx.fillStyle = "#888"; ctx.font = "bold 15px Arial";
+      ctx.fillText("— Resource Usage —", cx, ly); ly += 22;
+      if (p.fuelConsumed > 0) { ctx.fillStyle = "#f90"; ctx.font = "16px Arial"; ctx.fillText(`Fuel: ${p.fuelConsumed}`, cx, ly); ly += 20; }
+      if (p.retardantConsumed > 0) { ctx.fillStyle = "#f44"; ctx.font = "16px Arial"; ctx.fillText(`Retardant: ${p.retardantConsumed}`, cx, ly); ly += 20; }
+      if (p.foodWear > 0) { ctx.fillStyle = "#f94"; ctx.font = "16px Arial"; ctx.fillText(`Food consumed: ${p.foodWear}`, cx, ly); ly += 20; }
+    }
+
+    // Buttons
+    const btnW = 160, btnH = 42, btnGap = 16;
+    const totalBtnsW = p.isEndless && !p.isFailed ? btnW * 2 + btnGap : btnW + btnGap + btnW;
+    const btnStartX = cx - totalBtnsW / 2;
+    const btnY = panelY + panelH - btnH - 16;
+
+    // "View Map" button (always present)
+    const viewBtn = { x: btnStartX, y: btnY, w: btnW, h: btnH };
+    ctx.fillStyle = "#333";
+    ctx.fillRect(viewBtn.x, viewBtn.y, viewBtn.w, viewBtn.h);
+    ctx.strokeStyle = "#888"; ctx.lineWidth = 1;
+    ctx.strokeRect(viewBtn.x, viewBtn.y, viewBtn.w, viewBtn.h);
+    ctx.fillStyle = "#ddd"; ctx.font = "bold 16px Arial";
+    ctx.textBaseline = "middle";
+    ctx.fillText("▼  View Map", viewBtn.x + viewBtn.w / 2, viewBtn.y + viewBtn.h / 2);
+    this._resultsButtons.push({ ...viewBtn, callback: () => { this._resultsMinimized = true; } });
+
+    // Primary action button
+    const actBtn = { x: btnStartX + btnW + btnGap, y: btnY, w: btnW, h: btnH };
+    const actLabel = p.isEndless && !p.isFailed ? "Next Day →" : (p.isEndless ? "End Season" : "Return to Base");
+    ctx.fillStyle = "#4CAF50";
+    ctx.fillRect(actBtn.x, actBtn.y, actBtn.w, actBtn.h);
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 1;
+    ctx.strokeRect(actBtn.x, actBtn.y, actBtn.w, actBtn.h);
+    ctx.fillStyle = "#fff"; ctx.font = "bold 16px Arial";
+    ctx.fillText(actLabel, actBtn.x + actBtn.w / 2, actBtn.y + actBtn.h / 2);
+    this._resultsButtons.push({
+      ...actBtn,
+      callback: () => {
+        this._missionOver = false;
+        this.screenManager?.goTo("levelComplete", this._missionOverPayload);
+      },
+    });
   }
 
   handlePointerMove(x, y, evt) {

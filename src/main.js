@@ -57,28 +57,54 @@ function resizeCanvas() {
 }
 
 // Optional tree sprites (falls back to vector rendering if not loaded)
+// Structure: { conifer: { normal: Image[], burning, burnt, wet }, deciduous: { ... } }
 const treeSprites = {
-  normal1: new Image(),
-  normal2: new Image(),
-  normal3: new Image(),
-  normal4: new Image(),
-  burning: new Image(),
-  burnt: new Image(),
-  wet: new Image(),
+  conifer: {
+    normal: [new Image(), new Image(), new Image(), new Image()], // normal_tree1–4
+    burning: new Image(),
+    burnt: new Image(),
+    wet: new Image(),
+  },
+  deciduous: {
+    normal: [new Image(), new Image(), new Image()], // normal_tree6, normal_tree8, normal_tree9
+    burning: new Image(),
+    burnt: new Image(),
+    wet: new Image(),
+  },
 };
 
 const spritePaths = {
-  normal1: "./Media/normal_tree1.png",
-  normal2: "./Media/normal_tree2.png",
-  normal3: "./Media/normal_tree3.png",
-  normal4: "./Media/normal_tree4.png",
-  burning: "./Media/burning_tree2.png",
-  burnt: "./Media/burnt_tree.png",
-  wet: "./Media/suppresed_tree.png",
+  conifer: {
+    normal: [
+      "./Media/normal_tree1.png",
+      "./Media/normal_tree2.png",
+      "./Media/normal_tree3.png",
+      "./Media/normal_tree4.png",
+    ],
+    burning: "./Media/burning_tree2.png",
+    burnt: "./Media/burnt_tree.png",
+    wet: "./Media/suppresed_tree.png",
+  },
+  deciduous: {
+    normal: [
+      "./Media/normal_tree6.png",
+      "./Media/normal_tree8.png",
+      "./Media/normal_tree9.png",
+    ],
+    burning: "./Media/burning_tree1.png",
+    burnt: "./Media/burnt_tree2.png",
+    wet: "./Media/suppresed_tree2.png",
+  },
 };
 
-for (const key of Object.keys(spritePaths)) {
-  treeSprites[key].src = encodeURI(spritePaths[key]);
+for (const type of Object.keys(spritePaths)) {
+  for (const [state, val] of Object.entries(spritePaths[type])) {
+    if (Array.isArray(val)) {
+      val.forEach((path, i) => { treeSprites[type].normal[i].src = encodeURI(path); });
+    } else {
+      treeSprites[type][state].src = encodeURI(val);
+    }
+  }
 }
 
 // Title/backdrop image (shown on the title screen)
@@ -104,23 +130,39 @@ levelSelectBackground.src = encodeURI(levelSelectBackgroundPath);
 
 // Bomber sprite
 const bomberSprite = new Image();
-bomberSprite.src = encodeURI("./Media/bomber.png");
+bomberSprite.src = encodeURI("./Media/bomber3.png");
 
 // Helicopter sprite
 const heloSprite = new Image();
-heloSprite.src = encodeURI("./Media/helo.png");
+heloSprite.src = encodeURI("./Media/helo2.png");
 
 // Bulldozer sprite
 const bulldozerSprite = new Image();
 bulldozerSprite.src = encodeURI("./Media/bulldozer.png");
 
-// Settlement sprite
+// Forest floor background (tiled world background in play mode)
+const forestFloorSprite = new Image();
+forestFloorSprite.src = encodeURI("./Media/forest_floor11.png");
+
+// Settlement sprites
 const settlementSprite = new Image();
 settlementSprite.src = encodeURI("./Media base/settlement.png");
+const settlement3Sprite = new Image();
+settlement3Sprite.src = encodeURI("./Media/settlemen7.png");
+const settlement5Sprite = new Image();
+settlement5Sprite.src = encodeURI("./Media/settlemen6.png");
+const settlement7BurningSprite = new Image();
+settlement7BurningSprite.src = encodeURI("./Media/settlemen7_burning.png");
+const settlement6BurningSprite = new Image();
+settlement6BurningSprite.src = encodeURI("./Media/settlemen6_burning.png");
 
 // Watch tower sprite
 const watchTowerSprite = new Image();
-watchTowerSprite.src = encodeURI("./Media/watch_tower2.png");
+watchTowerSprite.src = encodeURI("./Media/firecrew2.png");
+
+// Drone sprite
+const droneSprite = new Image();
+droneSprite.src = encodeURI("./Media/drone.png");
 
 // Game mode instances
 const trainingMode = new TrainingGroundMode();
@@ -236,7 +278,7 @@ const screenManager = new ScreenManager({
     }),
     play: new PlayScreen({
       canvas,
-      sprites: { ...treeSprites, bomber: bomberSprite, helo: heloSprite, bulldozer: bulldozerSprite, settlement: settlementSprite, watchTower: watchTowerSprite },
+      sprites: { ...treeSprites, bomber: bomberSprite, helo: heloSprite, bulldozer: bulldozerSprite, forestFloor: forestFloorSprite, settlement: settlementSprite, settlement3: settlement3Sprite, settlement5: settlement5Sprite, settlement3_burning: settlement7BurningSprite, settlement5_burning: settlement6BurningSprite, watchTower: watchTowerSprite, drone: droneSprite },
       gameMode: trainingMode,
       economyState,
       onExitToMenu: () => screenManager.goTo("base"),
@@ -364,7 +406,7 @@ window.addEventListener("wheel", (evt) => {
   const playScreen = screenManager.current;
   if (!playScreen || !(playScreen instanceof Object) || !playScreen.gameState) return;
 
-  const zoomStep = 0.2;
+  const zoomStep = 0.01;
   const minZoom = 2.5;
   const maxZoom = 1.75;
   if (evt.deltaY > 0) {
