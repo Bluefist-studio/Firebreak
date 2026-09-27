@@ -29,47 +29,13 @@ export class TopStatusHUD {
     const boxWidth = Math.min(viewport.width - 80, Math.round(700 * scale));
     const padding = Math.max(8, Math.round(10 * scale));
 
-    // Draw background centered
-    ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
-    ctx.fillRect(centerX - boxWidth / 2, topY, boxWidth, boxHeight);
+    // Pre-compute button row metrics to size the background to fit all elements
+    const btnH = Math.max(20, Math.round(22 * scale));
+    const btnW = Math.max(28, Math.round(30 * scale));
+    const gap = Math.round(4 * scale);
+    const clockFont = `${Math.max(11, Math.round(14 * scale))}px Arial`;
+    const btnFont = `bold ${Math.max(10, Math.round(12 * scale))}px Arial`;
 
-    ctx.font = `${Math.max(12, Math.round(16 * scale))}px Arial`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = "#CCCCCC";
-    
-    const textY = topY + boxHeight / 2;
-    const dayLabel = this.gameState.currentDay === 0 ? "Training Day" : `Day ${this.gameState.currentDay}`;
-
-    // Show the correct money source: economyState.money when available, gameState.money otherwise
-    const eco = this.gameState.economyState;
-    const displayMoney = eco ? eco.money : Math.floor(this.gameState.money);
-
-    // Calculate live burn percentage (only fully burnt trees)
-    const forest = this.gameState.forest;
-    const totalTrees = forest.treeCount || 1;
-    const burnPct = ((forest.burntCount || 0) / totalTrees * 100).toFixed(1);
-
-    const info = [
-      dayLabel,
-      `$${displayMoney.toLocaleString()}`,
-      `Burnt: ${burnPct}%`,
-      `Fire: ${forest.burningCount}`,
-      `${this.gameState.weather.temperature}°C`,
-      `AH: ${this.gameState.weather.airHumidity}%`,
-      `FH: ${this.gameState.weather.fuelHumidity}%`,
-      `${Math.round(this.gameState.weather.windStrength)} km/h`
-    ];
-
-    // Show economy resources when not using free skills
-    if (eco && !this.gameState.isSkillFree()) {
-      info.push(`Fuel: ${eco.fuel}`, `Ret: ${eco.retardant}`, `Food: ${eco.food} (${eco.crewFedStatus}% Fed)`);
-    }
-    
-    const text = info.join("  |  ");
-    ctx.fillText(text, centerX, textY);
-
-    // ── Clock + speed controls row below the status bar ──
     const ps = this.playScreen;
     const speeds = ps?.speedLevels || [1, 2, 3, 5];
     const currentSpeed = ps?.gameSpeed || 1;
@@ -78,21 +44,58 @@ export class TopStatusHUD {
     const secs = Math.floor(elapsed % 60);
     const clock = `${mins}:${secs.toString().padStart(2, '0')}`;
 
-    const clockY = topY + boxHeight + Math.round(4 * scale);
-    const btnH = Math.max(20, Math.round(22 * scale));
-    const btnW = Math.max(28, Math.round(30 * scale));
-    const gap = Math.round(4 * scale);
-    const clockFont = `${Math.max(11, Math.round(14 * scale))}px Arial`;
-    const btnFont = `bold ${Math.max(10, Math.round(12 * scale))}px Arial`;
-
-    // Measure clock text width for centering
     ctx.font = clockFont;
     const speedText = currentSpeed === 0 ? ' PAUSED' : currentSpeed > 1 ? ` x${currentSpeed}` : '';
     const clockLabel = `${clock}${speedText}`;
     const clockW = ctx.measureText(clockLabel).width + Math.round(16 * scale);
 
-    // Total row width: [<<] [<] [||] clock [>] [>>]
-    const totalW = btnW * 5 + gap * 5 + clockW;
+    ctx.font = btnFont;
+    const esW = Math.max(28, ctx.measureText('ES').width + Math.round(14 * scale));
+    const cdW = Math.max(28, ctx.measureText('CD').width + Math.round(14 * scale));
+
+    // Full row width: [<<] [<] [||] clock [>] [>>] [ES] [CD]
+    const totalW = btnW * 5 + gap * 5 + clockW + esW + gap + cdW + gap;
+    const bgPad = Math.round(12 * scale);
+    const bgWidth = Math.max(totalW + bgPad * 2, boxWidth);
+    const bgStartX = centerX - bgWidth / 2;
+    // Cover just the two top rows (status text + clock/buttons row)
+    const bgH = boxHeight + Math.round(8 * scale) + btnH + Math.round(6 * scale);
+    ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+    ctx.fillRect(bgStartX, topY, bgWidth, bgH);
+
+    ctx.font = `${Math.max(12, Math.round(16 * scale))}px Arial`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#CCCCCC";
+    
+    const textY = topY + boxHeight / 2;
+    const _mission = this.gameState.mission;
+    const _isEndless = _mission?.id === "fire_season";
+    const dayLabel = _isEndless
+      ? `Day ${this.gameState.currentDay}`
+      : (_mission?.name ?? "Mission");
+
+    // Calculate live burn percentage (only fully burnt trees)
+    const forest = this.gameState.forest;
+    const totalTrees = forest.treeCount || 1;
+    const burnPct = ((forest.burntCount || 0) / totalTrees * 100).toFixed(1);
+
+    const weather = this.gameState.weather;
+    const weatherStr = weather
+      ? `  |  ${weather.temperature}°C  AH:${weather.airHumidity}%  FH:${weather.fuelHumidity}%`
+      : '';
+
+    const info = [
+      dayLabel,
+      `Burnt: ${burnPct}%`,
+      `Fire: ${forest.burningCount}`
+    ];
+
+    const text = info.join("  |  ") + weatherStr;
+    ctx.fillText(text, centerX, textY);
+
+    // ── Clock + speed controls row below the status bar ──
+    const clockY = topY + boxHeight + Math.round(4 * scale);
     let rowX = centerX - totalW / 2;
 
     this._clockButtons = [];
@@ -162,24 +165,73 @@ export class TopStatusHUD {
     drawBtn(rowX, "\u00BB", currentIdx < speeds.length - 1, () => {
       if (ps && currentIdx < speeds.length - 1) ps.gameSpeed = speeds[speeds.length - 1];
     });
+    rowX += btnW + gap;
 
-    // ── Underfed warning below clock row ──
-    const warningY = clockY + btnH + Math.round(4 * scale);
-    if (eco && !this.gameState.isSkillFree()) {
-      const fedPenalty = eco.getCooldownModifier();
-      if (fedPenalty >= 10) {
-        const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 300);
-        ctx.fillStyle = `rgba(255, 50, 50, ${pulse})`;
-        ctx.font = `bold ${Math.max(12, Math.round(16 * scale))}px Arial`;
-        ctx.textAlign = "center";
-        ctx.fillText(`\u26a0 CREW STARVING \u2014 Cooldowns +${fedPenalty}s (Feed: ${eco.crewFedStatus}%)`, centerX, warningY + Math.round(10 * scale));
-      } else if (fedPenalty > 0) {
-        const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 500);
-        ctx.fillStyle = `rgba(255, 160, 40, ${pulse})`;
-        ctx.font = `bold ${Math.max(11, Math.round(14 * scale))}px Arial`;
-        ctx.textAlign = "center";
-        ctx.fillText(`\u26a0 Crew Underfed \u2014 Cooldowns +${fedPenalty}s (Feed: ${eco.crewFedStatus}%)`, centerX, warningY + Math.round(10 * scale));
+    // [ES] — edge scroll toggle
+    const esOn = ps?.edgeScrollEnabled ?? false;
+    const esLabel = 'ES';
+    ctx.font = btnFont;
+    ctx.fillStyle = esOn ? "rgba(30, 90, 30, 0.75)" : "rgba(0, 0, 0, 0.5)";
+    ctx.fillRect(rowX, clockY, esW, btnH);
+    ctx.strokeStyle = esOn ? "rgba(80, 200, 80, 0.65)" : "rgba(100, 100, 100, 0.3)";
+    ctx.lineWidth = esOn ? 1.5 : 1;
+    ctx.strokeRect(rowX, clockY, esW, btnH);
+    ctx.fillStyle = esOn ? "#88ee88" : "#888";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(esLabel, rowX + esW / 2, clockY + btnH / 2);
+    this._clockButtons.push({ x: rowX, y: clockY, w: esW, h: btnH, action: () => {
+      if (ps) {
+        ps.edgeScrollEnabled = !ps.edgeScrollEnabled;
+        localStorage.setItem('fb_edgeScroll', ps.edgeScrollEnabled ? '1' : '0');
       }
+    }});
+    rowX += esW + gap;
+
+    // [CD] — cursor drift toggle
+    const cdOn = ps?.cursorDriftEnabled ?? false;
+    const cdLabel = 'CD';
+    ctx.font = btnFont;
+    ctx.fillStyle = cdOn ? "rgba(30, 60, 110, 0.80)" : "rgba(0, 0, 0, 0.5)";
+    ctx.fillRect(rowX, clockY, cdW, btnH);
+    ctx.strokeStyle = cdOn ? "rgba(80, 150, 255, 0.70)" : "rgba(100, 100, 100, 0.3)";
+    ctx.lineWidth = cdOn ? 1.5 : 1;
+    ctx.strokeRect(rowX, clockY, cdW, btnH);
+    ctx.fillStyle = cdOn ? "#88bbff" : "#888";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(cdLabel, rowX + cdW / 2, clockY + btnH / 2);
+    this._clockButtons.push({ x: rowX, y: clockY, w: cdW, h: btnH, action: () => {
+      if (ps) {
+        ps.cursorDriftEnabled = !ps.cursorDriftEnabled;
+        localStorage.setItem('fb_cursorDrift', ps.cursorDriftEnabled ? '1' : '0');
+      }
+    }});
+    rowX += cdW + gap;
+
+    // Mission countdown timer (winCondition: "timer")
+    const mt = this.gameState.missionTimer;
+    if (mt !== null) {
+      const timerM   = Math.floor(mt / 60);
+      const timerS   = Math.ceil(mt % 60);
+      const timerStr = `Hold: ${timerM}:${timerS.toString().padStart(2, '0')}`;
+      const timerColor = mt <= 30 ? "#ff4444" : mt <= 60 ? "#ffcc44" : "#44ee88";
+      ctx.font = clockFont;
+      const timerW = ctx.measureText(timerStr).width + Math.round(16 * scale);
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillRect(rowX, clockY, timerW, btnH);
+      ctx.strokeStyle = timerColor;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(rowX, clockY, timerW, btnH);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const pulse = mt <= 30 ? 0.65 + 0.35 * Math.sin(performance.now() / 250) : 1;
+      ctx.globalAlpha = pulse;
+      ctx.fillStyle = timerColor;
+      ctx.fillText(timerStr, rowX + timerW / 2, clockY + btnH / 2);
+      ctx.globalAlpha = 1;
     }
   }
 }
+
+

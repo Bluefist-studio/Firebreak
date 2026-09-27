@@ -24,24 +24,31 @@ const FUEL_BURN     = { xs: [10, 20, 35, 50, 65, 80], ys: [1.30, 1.20, 1.10, 1.0
 // 0° = downwind, 45° = diagonal downwind, 90° = crosswind, 135° = diagonal upwind, 180° = upwind
 const WIND_DIR      = { xs: [0, 45, 90, 135, 180], ys: [1.00, 0.70, 0.35, 0.10, 0.00] };
 
-// Tree Types
-const TREE_TYPES = {
+// Tree Types — defaults; can be overridden per-mission via the treeTypes field
+const TREE_TYPES_DEFAULT = {
   conifer:   { burnDuration: 21.4, ignitionResistance: 1.10 },
-  deciduous: { burnDuration: 30.6, ignitionResistance: 0.90 },
+  deciduous: { burnDuration: 23.6, ignitionResistance: 1.00 },
 };
 
-export { TREE_TYPES };
+// Re-export defaults so other systems can reference them if needed
+export const TREE_TYPES = TREE_TYPES_DEFAULT;
 
 // ══════════════════════════════════════════════════════════════
 
 export class WeatherSystem {
-  constructor({ temperature = 22, airHumidity = 40, windAngle = 0, windStrength = 30, fuelHumidity = 50 } = {}) {
+  constructor({ temperature = 22, airHumidity = 40, windAngle = 0, windStrength = 30, fuelHumidity = 50, treeTypes = null } = {}) {
     this.temperature = temperature;
     this.airHumidity = airHumidity;     // 10–80 %
     this.windAngle = windAngle;
     this.windStrength = windStrength;    // 1–100
     this.fuelHumidity = fuelHumidity;    // 10–80 %
     this.baseSpreadChance = 0.012;
+
+    // Merge mission-level tree type overrides with defaults
+    this.treeTypes = {
+      conifer:   { ...TREE_TYPES_DEFAULT.conifer,   ...(treeTypes?.conifer   ?? {}) },
+      deciduous: { ...TREE_TYPES_DEFAULT.deciduous, ...(treeTypes?.deciduous ?? {}) },
+    };
   }
 
   update(dt) {
@@ -97,11 +104,11 @@ export class WeatherSystem {
 
   // ── Tree Type Lookups ────────────────────────────────────────
   getTreeBurnDuration(treeType) {
-    return (TREE_TYPES[treeType] || TREE_TYPES.conifer).burnDuration;
+    return (this.treeTypes[treeType] || this.treeTypes.conifer).burnDuration;
   }
 
   getTreeIgnitionResistance(treeType) {
-    return (TREE_TYPES[treeType] || TREE_TYPES.conifer).ignitionResistance;
+    return (this.treeTypes[treeType] || this.treeTypes.conifer).ignitionResistance;
   }
 
   // ── Combined Ignition Chance ─────────────────────────────────

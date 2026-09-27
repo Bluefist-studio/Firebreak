@@ -1,12 +1,13 @@
 import { ScreenManager } from "./core/ScreenManager.js";
 import { EconomyState } from "./core/EconomyState.js";
+import { MusicManager } from "./core/MusicManager.js";
 import { TitleScreen } from "./ui/TitleScreen.js";
 import { MainMenuScreen } from "./ui/MainMenuScreen.js";
 import { BaseScreen } from "./ui/BaseScreen.js";
-import { RegionMapScreen } from "./ui/RegionMapScreen.js";
 import { PlayScreen } from "./ui/PlayScreen.js";
 import { LevelCompleteScreen } from "./ui/LevelCompleteScreen.js";
 import { PreMissionScreen } from "./ui/PreMissionScreen.js";
+import { BaseMode } from "./modes/BaseMode.js";
 import { TrainingGroundMode } from "./modes/TrainingGroundMode.js";
 import { FireSeasonMode } from "./modes/FireSeasonMode.js";
 import { PineRidgeMode } from "./modes/PineRidgeMode.js";
@@ -64,12 +65,20 @@ const treeSprites = {
     burning: new Image(),
     burnt: new Image(),
     wet: new Image(),
+    retardant: new Image(),
   },
   deciduous: {
     normal: [new Image(), new Image(), new Image()], // normal_tree6, normal_tree8, normal_tree9
     burning: new Image(),
     burnt: new Image(),
     wet: new Image(),
+    retardant: new Image(),
+  },
+  settlementTree: {
+    normal: new Image(),   // invisible_tree.png
+    burning: [new Image(), new Image(), new Image()],  // fire1.png, fire2.png, fire3.png
+    burnt: new Image(),    // burnt.png
+    wet: new Image(),      // supressed.png
   },
 };
 
@@ -84,6 +93,7 @@ const spritePaths = {
     burning: "./Media/burning_tree2.png",
     burnt: "./Media/burnt_tree.png",
     wet: "./Media/suppresed_tree.png",
+    retardant: "./Media/retardant_tree.png",
   },
   deciduous: {
     normal: [
@@ -94,13 +104,20 @@ const spritePaths = {
     burning: "./Media/burning_tree1.png",
     burnt: "./Media/burnt_tree2.png",
     wet: "./Media/suppresed_tree2.png",
+    retardant: "./Media/retardant_tree2.png",
+  },
+  settlementTree: {
+    normal: "./Media/invisible_tree.png",
+    burning: ["./Media/fire1.png", "./Media/fire2.png", "./Media/fire3.png"],
+    burnt: "./Media/burnt.png",
+    wet: "./Media/supressed2.png",
   },
 };
 
 for (const type of Object.keys(spritePaths)) {
   for (const [state, val] of Object.entries(spritePaths[type])) {
     if (Array.isArray(val)) {
-      val.forEach((path, i) => { treeSprites[type].normal[i].src = encodeURI(path); });
+      val.forEach((path, i) => { treeSprites[type][state][i].src = encodeURI(path); });
     } else {
       treeSprites[type][state].src = encodeURI(val);
     }
@@ -109,28 +126,32 @@ for (const type of Object.keys(spritePaths)) {
 
 // Title/backdrop image (shown on the title screen)
 const titleBackground = new Image();
-const titleBackgroundPath = "./Media/menu_background10.png";
+const titleBackgroundPath = "./Media/menu_background5.png";
 titleBackground.src = encodeURI(titleBackgroundPath);
 
 
 // Main menu background
 const menuBackground = new Image();
-const menuBackgroundPath = "./Media/menu_background9.png";
+const menuBackgroundPath = "./Media/menu_background4.png";
 menuBackground.src = encodeURI(menuBackgroundPath);
 
 
 // Base background
 const baseBackground = new Image();
-baseBackground.src = encodeURI("./Media/base_background3.png");
+baseBackground.src = encodeURI("./Media/menu_background.png");
 
 // Mission select background
 const levelSelectBackground = new Image();
 const levelSelectBackgroundPath = "./Media/mission_select.png";
 levelSelectBackground.src = encodeURI(levelSelectBackgroundPath);
 
+// Pre-mission briefing background
+const preMissionBackground = new Image();
+preMissionBackground.src = encodeURI("./Media/levelselect_back.png");
+
 // Bomber sprite
 const bomberSprite = new Image();
-bomberSprite.src = encodeURI("./Media/bomber3.png");
+bomberSprite.src = encodeURI("./Media/bomber5.png");
 
 // Helicopter sprite
 const heloSprite = new Image();
@@ -138,23 +159,27 @@ heloSprite.src = encodeURI("./Media/helo2.png");
 
 // Bulldozer sprite
 const bulldozerSprite = new Image();
-bulldozerSprite.src = encodeURI("./Media/bulldozer.png");
+bulldozerSprite.src = encodeURI("./Media/bulldozer3.png");
+
+// Sprinkler Trailer sprite
+const sprinklerSprite = new Image();
+sprinklerSprite.src = encodeURI("./Media/sprinkler.png");
 
 // Forest floor background (tiled world background in play mode)
 const forestFloorSprite = new Image();
-forestFloorSprite.src = encodeURI("./Media/forest_floor11.png");
+forestFloorSprite.src = encodeURI("./Media base/forest_floor10.png");
 
 // Settlement sprites
 const settlementSprite = new Image();
 settlementSprite.src = encodeURI("./Media base/settlement.png");
 const settlement3Sprite = new Image();
-settlement3Sprite.src = encodeURI("./Media/settlemen7.png");
+settlement3Sprite.src = encodeURI("./Media/settlemen_n3.png");
 const settlement5Sprite = new Image();
-settlement5Sprite.src = encodeURI("./Media/settlemen6.png");
+settlement5Sprite.src = encodeURI("./Media/settlemen_n1.png");
 const settlement7BurningSprite = new Image();
-settlement7BurningSprite.src = encodeURI("./Media/settlemen7_burning.png");
+settlement7BurningSprite.src = encodeURI("./Media/settlemen_n4.png");
 const settlement6BurningSprite = new Image();
-settlement6BurningSprite.src = encodeURI("./Media/settlemen6_burning.png");
+settlement6BurningSprite.src = encodeURI("./Media/settlemen_n2.png");
 
 // Watch tower sprite
 const watchTowerSprite = new Image();
@@ -162,13 +187,27 @@ watchTowerSprite.src = encodeURI("./Media/firecrew2.png");
 
 // Drone sprite
 const droneSprite = new Image();
-droneSprite.src = encodeURI("./Media/drone.png");
+droneSprite.src = encodeURI("./Media/drone2.png");
+
+// Wheel selection icons (one per skill, 1–7)
+const wheelIconBomber  = new Image(); wheelIconBomber.src  = encodeURI('./Media/bomber_icon.png');
+const wheelIconHeli    = new Image(); wheelIconHeli.src    = encodeURI('./Media/heli_icon.png');
+const wheelIconBull    = new Image(); wheelIconBull.src    = encodeURI('./Media/bulldozer_icon.png');
+const wheelIconSpri    = new Image(); wheelIconSpri.src    = encodeURI('./Media/sprinkler.png');
+const wheelIconFW      = new Image(); wheelIconFW.src      = encodeURI('./Media/firewatch_icon.png');
+const wheelIconDrone   = new Image(); wheelIconDrone.src   = encodeURI('./Media/drone_icon.png');
+const wheelIconRecon   = new Image(); wheelIconRecon.src   = encodeURI('./Media/recon_icon.png');
+
+// Road texture
+const roadTextureSprite = new Image();
+roadTextureSprite.src = encodeURI("./Media/roadtexture.png");
 
 // Game mode instances
 const trainingMode = new TrainingGroundMode();
 const fireSeasonMode = new FireSeasonMode();
 const pineRidgeMode = new PineRidgeMode();
 const wildfireFrontMode = new WildfireFrontMode();
+const genericMode = new BaseMode(); // Fallback for custom missions
 
 let currentGameMode = null; // Track which mode is active
 
@@ -200,17 +239,31 @@ function resetEconomyForNewGame() {
     economyState.buildings[id].tier = b.tier;
   }
   economyState.upgrades = new Set();
+  economyState.unlockedSkills = new Set([...fresh.unlockedSkills]);
   for (const key of Object.keys(fresh.assetDurability)) {
     economyState.assetDurability[key] = fresh.assetDurability[key];
   }
+  // Reset mission progress
+  economyState.completedMissions = new Set();
+  economyState.missionBestDays = {};
   economyState.save();
 }
 
 // Debug console commands
-window.grant = () => { economyState.money += 50000; return `Money: $${economyState.money.toLocaleString()}`; };
+window.grant = (amount = 50000) => {
+  const value = Number(amount);
+  if (!Number.isFinite(value) || value <= 0) {
+    return "Invalid amount. Use grant(1000000) or another positive number.";
+  }
+  economyState.money += value;
+  return `Money: $${economyState.money.toLocaleString()}`;
+};
 window.resetSave = () => { EconomyState.deleteSave(); location.reload(); };
 
+const musicManager = new MusicManager();
+
 const screenManager = new ScreenManager({
+  musicManager,
   screens: {
     title: new TitleScreen({
       backgroundImage: titleBackground,
@@ -230,27 +283,19 @@ const screenManager = new ScreenManager({
     base: new BaseScreen({
       backgroundImage: baseBackground,
       economyState,
-      onNavigate: (target) => {
-        if (target === "missions") {
-          economyState.save();
-          screenManager.goTo("region");
-        }
+      missions,
+      onSelectMission: (mission) => {
+        economyState.save();
+        screenManager.goTo("preMission", { mission });
       },
       onBack: () => {
         economyState.save();
         screenManager.goTo("menu");
       },
     }),
-    region: new RegionMapScreen({
-      backgroundImage: levelSelectBackground,
-      missions,
-      onBack: () => screenManager.goTo("base"),
-      onSelectMission: (mission) => {
-        screenManager.goTo("preMission", { mission });
-      }
-    }),
     preMission: new PreMissionScreen({
       economyState,
+      backgroundImage: preMissionBackground,
       onStart: (payload) => {
         const mission = payload.mission;
         if (mission.id === "training") {
@@ -260,7 +305,7 @@ const screenManager = new ScreenManager({
         } else if (mission.id === "fire_season") {
           currentGameMode = fireSeasonMode;
           fireSeasonMode.initializeNewSession(mission.startMoney);
-          screenManager.goTo("play", { mission, gameMode: fireSeasonMode, isFirstRun: true, day: 0, money: mission.startMoney });
+          screenManager.goTo("play", { mission, gameMode: fireSeasonMode, isFirstRun: true, day: 1, money: mission.startMoney });
         } else if (mission.id === "pine") {
           currentGameMode = pineRidgeMode;
           pineRidgeMode.initializeNewSession(mission.startMoney);
@@ -270,15 +315,17 @@ const screenManager = new ScreenManager({
           wildfireFrontMode.initializeNewSession(mission.startMoney);
           screenManager.goTo("play", { mission, gameMode: wildfireFrontMode, isFirstRun: true, money: mission.startMoney });
         } else {
-          currentGameMode = null;
-          screenManager.goTo("play", { mission, isFirstRun: true });
+          // Custom mission: use generic mode that respects fireStartCount and fireStartPattern
+          currentGameMode = genericMode;
+          screenManager.goTo("play", { mission, gameMode: genericMode, isFirstRun: true });
         }
       },
-      onBack: () => screenManager.goTo("region"),
+      onBack: () => screenManager.goTo("base", { openMissions: true }),
     }),
     play: new PlayScreen({
       canvas,
-      sprites: { ...treeSprites, bomber: bomberSprite, helo: heloSprite, bulldozer: bulldozerSprite, forestFloor: forestFloorSprite, settlement: settlementSprite, settlement3: settlement3Sprite, settlement5: settlement5Sprite, settlement3_burning: settlement7BurningSprite, settlement5_burning: settlement6BurningSprite, watchTower: watchTowerSprite, drone: droneSprite },
+      sprites: { ...treeSprites, bomber: bomberSprite, helo: heloSprite, bulldozer: bulldozerSprite, sprinkler: sprinklerSprite, forestFloor: forestFloorSprite, settlement: settlementSprite, settlement3: settlement3Sprite, settlement5: settlement5Sprite, settlement3_burning: settlement7BurningSprite, settlement5_burning: settlement6BurningSprite, watchTower: watchTowerSprite, drone: droneSprite, roadTexture: roadTextureSprite,
+        wheelIcons: { 1: wheelIconBomber, 2: wheelIconHeli, 3: wheelIconBull, 4: wheelIconSpri, 5: wheelIconFW, 6: wheelIconDrone, 7: wheelIconRecon } },
       gameMode: trainingMode,
       economyState,
       onExitToMenu: () => screenManager.goTo("base"),
@@ -334,7 +381,7 @@ const screenManager = new ScreenManager({
           currentGameMode.reset();
         }
         economyState.save();
-        screenManager.goTo("base");
+        screenManager.goTo("base", { openMissions: true });
       },
     }),
   },
@@ -353,6 +400,7 @@ function loop(time) {
   const dt = (time - lastTime) / 1000;
   lastTime = time;
 
+  musicManager.update(dt);
   screenManager.update(dt);
   screenManager.render(ctx);
 
@@ -361,6 +409,8 @@ function loop(time) {
 requestAnimationFrame(loop);
 
 canvas.addEventListener("pointerdown", (evt) => {
+  // Prevent the browser autoscroll cursor from appearing on middle-click
+  if (evt.button === 1) evt.preventDefault();
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width / rect.width;
   const scaleY = canvas.height / rect.height;
@@ -401,18 +451,27 @@ window.addEventListener("blur", () => {
   screenManager.handleWindowBlur();
 });
 
-// Support mouse wheel zoom in/out in play screen
+// Support mouse wheel zoom in/out in play screen, and scrolling in region map
 window.addEventListener("wheel", (evt) => {
-  const playScreen = screenManager.current;
-  if (!playScreen || !(playScreen instanceof Object) || !playScreen.gameState) return;
+  const screen = screenManager.current;
+  if (!screen) return;
 
+  // Region map: scroll mission list
+  if (typeof screen.handleWheel === "function" && !screen.gameState) {
+    screen.handleWheel(evt);
+    evt.preventDefault();
+    return;
+  }
+
+  // Play screen: zoom
+  if (!screen.gameState) return;
   const zoomStep = 0.01;
   const minZoom = 2.5;
   const maxZoom = 1.75;
   if (evt.deltaY > 0) {
-    playScreen.gameState.camera.zoom = Math.max(minZoom, playScreen.gameState.camera.zoom - zoomStep);
+    screen.gameState.camera.zoom = Math.max(minZoom, screen.gameState.camera.zoom - zoomStep);
   } else if (evt.deltaY < 0) {
-    playScreen.gameState.camera.zoom = Math.min(maxZoom, playScreen.gameState.camera.zoom + zoomStep);
+    screen.gameState.camera.zoom = Math.min(maxZoom, screen.gameState.camera.zoom + zoomStep);
   }
   evt.preventDefault();
 }, { passive: false });

@@ -113,9 +113,10 @@ export class BaseMode {
     const fireCount = mission.fireStartCount ?? 1;
     const firePattern = mission.fireStartPattern ?? "center";
     const allowedQuadrants = mission.fireStartQuadrants ?? ["NW", "NE", "SE", "SW"];
+    const fireRadius = mission.fireStartRadius ?? null;
 
     if (firePattern === "center") {
-      return this._initializeFiresCenter(forest, fireCount);
+      return this._initializeFiresCenter(forest, fireCount, fireRadius);
     } else if (firePattern === "quadrant") {
       return this._initializeFiresQuadrant(forest, fireCount, allowedQuadrants);
     } else if (firePattern === "random quadrant") {
@@ -131,36 +132,14 @@ export class BaseMode {
   /**
    * Initialize fires at center of map - ignite a small radius of trees
    */
-  _initializeFiresCenter(forest, count) {
+  _initializeFiresCenter(forest, count, radius = null) {
     const centerX = forest.width / 2;
     const centerY = forest.height / 2;
-    const ignitionRadius = 20; // Radius around center to ignite trees
-    let firesSpawned = 0;
-    const treesInRadius = [];
-    
-    // Find all normal trees within the ignition radius
-    for (const tree of forest.trees) {
-      if (tree.state !== "normal") continue;
-      
-      const dx = tree.x - centerX;
-      const dy = tree.y - centerY;
-      const distSq = dx * dx + dy * dy;
-      const dist = Math.sqrt(distSq);
-      
-      if (dist <= ignitionRadius) {
-        treesInRadius.push({ tree, dist });
-      }
-    }
-    // Ignite all trees in the radius
-    for (const { tree } of treesInRadius) {
-      forest.setState(tree, "burning");
-      firesSpawned++;
-    }
-
-    if (firesSpawned === 0) {
-      return this._initializeFiresCenterLarge(forest, count);
-    } else {
-    }
+    const ignitionRadius = radius ?? 25;
+    const nearby = [...forest.grid.queryCircle(centerX, centerY, ignitionRadius)]
+      .filter(t => t.state === "normal");
+    for (const tree of nearby) forest.setState(tree, "burning");
+    if (nearby.length === 0) return this._initializeFiresCenterLarge(forest, count);
   }
 
   /**
@@ -169,7 +148,7 @@ export class BaseMode {
   _initializeFiresCenterLarge(forest, count) {
     const centerX = forest.width / 2;
     const centerY = forest.height / 2;
-    const ignitionRadius = 30; // Large radius for backup
+    const ignitionRadius = 30; // Large fallback radius when no trees found at default radius
     let firesSpawned = 0;
     const treesInRadius = [];
     
@@ -208,19 +187,22 @@ export class BaseMode {
     }
 
     const firesPerQuadrant = Math.max(1, Math.ceil(count / allowedQuadrants.length));
-    for (const quadrant of allowedQuadrants) {
-      this._initializeFiresInQuadrant(forest, firesPerQuadrant, quadrant);
+    for (const entry of allowedQuadrants) {
+      const parsed = typeof entry === 'string'
+        ? { quadrant: entry, cornerOffset: 0.5, centerOffset: null, radius: null }
+        : { quadrant: entry.quadrant, cornerOffset: entry.cornerOffset ?? 0.5, centerOffset: entry.centerOffset ?? null, radius: entry.radius ?? null };
+      this._initializeFiresInQuadrant(forest, firesPerQuadrant, parsed.quadrant, parsed.cornerOffset, parsed.centerOffset, parsed.radius);
     }
   }
 
   /**
    * Helper: Initialize fires in a specific quadrant, at the center
    */
-  _initializeFiresInQuadrant(forest, count, quadrant) {
+  _initializeFiresInQuadrant(forest, count, quadrant, cornerOffset = 0.5, centerOffset = null, radius = null) {
     const halfWidth = forest.width / 2;
     const halfHeight = forest.height / 2;
 
-    // Define quadrant boundaries and center
+    // Define quadrant boundaries
     const quadrants = {
       NW: { minX: 0, maxX: halfWidth, minY: 0, maxY: halfHeight },
       NE: { minX: halfWidth, maxX: forest.width, minY: 0, maxY: halfHeight },
@@ -233,33 +215,46 @@ export class BaseMode {
       return;
     }
 
-    // Calculate quadrant center
-    const centerX = (quad.minX + quad.maxX) / 2;
-    const centerY = (quad.minY + quad.maxY) / 2;
-    // Find nearest trees to the quadrant center
+    const mapCenterX = forest.width / 2;
+    const mapCenterY = forest.height / 2;
+    const cornerX = quadrant.includes('W') ? 0 : forest.width;
+    const cornerY = quadrant.includes('N') ? 0 : forest.height;
+    // centerOffset {x,y}: pixel offset from quadrant center (takes priority over cornerOffset)
+    // cornerOffset: lerp from outer corner toward map center (0=corner, 0.5=quadrant center, 1=map center)
+    let centerX, centerY;
+    if (centerOffset) {
+      const quadCX = cornerX + (mapCenterX - cornerX) * 0.5;
+      const quadCY = cornerY + (mapCenterY - cornerY) * 0.5;
+      centerX = quadCX + (centerOffset.x ?? 0);
+      centerY = quadCY + (centerOffset.y ?? 0);
+    } else {
+      centerX = cornerX + (mapCenterX - cornerX) * cornerOffset;
+      centerY = cornerY + (mapCenterY - cornerY) * cornerOffset;
+    }
+    if (radius != null) {
+      // Ignite ALL trees within the given radius of the center point
+      const nearby = [...forest.grid.queryCircle(centerX, centerY, radius)]
+        .filter(t => t.state === "normal");
+      if (nearby.length === 0) forest.igniteRandom(count);
+      for (const tree of nearby) forest.setState(tree, "burning");
+      return;
+    }
+
+    // No radius — ignite the nearest `count` trees in the quadrant
     const treesInQuad = [];
     for (const tree of forest.trees) {
       if (tree.state !== "normal") continue;
       if (tree.x < quad.minX || tree.x >= quad.maxX || tree.y < quad.minY || tree.y >= quad.maxY) continue;
-      
-      // Calculate distance to quadrant center
       const dx = tree.x - centerX;
       const dy = tree.y - centerY;
-      const distSq = dx * dx + dy * dy;
-      treesInQuad.push({ tree, distSq });
+      treesInQuad.push({ tree, distSq: dx * dx + dy * dy });
     }
 
-    if (treesInQuad.length === 0) {
-      return;
-    }
+    if (treesInQuad.length === 0) return;
 
-    // Sort by distance to center and ignite nearest ones
     treesInQuad.sort((a, b) => a.distSq - b.distSq);
-    
-    let firesSpawned = 0;
     for (let i = 0; i < count && i < treesInQuad.length; i++) {
       forest.setState(treesInQuad[i].tree, "burning");
-      firesSpawned++;
     }
   }
 
@@ -276,8 +271,11 @@ export class BaseMode {
     const shuffled = [...allowedQuadrants].sort(() => Math.random() - 0.5);
     const selectedQuadrants = shuffled.slice(0, Math.min(count, shuffled.length));
     // Spawn 1 fire in each selected quadrant
-    for (const quadrant of selectedQuadrants) {
-      this._initializeFiresInQuadrant(forest, 1, quadrant);
+    for (const entry of selectedQuadrants) {
+      const parsed = typeof entry === 'string'
+        ? { quadrant: entry, cornerOffset: 0.5, centerOffset: null, radius: null }
+        : { quadrant: entry.quadrant, cornerOffset: entry.cornerOffset ?? 0.5, centerOffset: entry.centerOffset ?? null, radius: entry.radius ?? null };
+      this._initializeFiresInQuadrant(forest, 1, parsed.quadrant, parsed.cornerOffset, parsed.centerOffset, parsed.radius);
     }
   }
 

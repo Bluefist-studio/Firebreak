@@ -1,36 +1,36 @@
 /**
  * EconomyState — persistent progression state that survives across missions.
- * Tracks money, resources, building tiers, upgrades, and asset unlocks.
+ * Tracks money, resources, upgrade tree tiers, upgrades, and asset unlocks.
  */
 import { SKILL_CONFIG as SC } from '../data/skillConfig.js';
 export class EconomyState {
   constructor() {
     // ── Money ──
-    this.money = 12000; // Starting money for a new game
+    this.money = 10000; // Starting money for a new game
 
     // ── Tutorial ──
-    this.tutorialComplete = false;
+    this.tutorialComplete = true;  // Tutorial disabled
 
     // ── Resources (current amounts) ──
-    this.fuel = 15;
+    this.fuel = 0;
     this.retardant = 0;
-    this.food = 2;
-    this.parts = 2;
+    this.food = 0;
+    this.parts = 0;
 
     // ── Resource prices ──
     this.prices = {
       fuel: 200,
       retardant: 500,
       food: 100,
-      parts: 100,
+      parts: 200,
     };
 
     // ── Storage cap tables (indexed by highest unlocked storage tier) ──
     this.storageTiers = {
-      fuel:      [20, 35, 50, 70],   // Storage I–IV
-      retardant: [8, 14, 20, 28],    // Storage I–IV
-      food:      [10, 18, 28],       // Storage I–III
-      parts:     [10, 18, 28],       // Storage I–III
+      fuel:      [5, 10, 20, 40],   // Storage I–IV
+      retardant: [4, 6, 8, 10],    // Storage I–IV
+      food:      [5, 10, 15],       // Storage I–III
+      parts:     [5, 10, 15],       // Storage I–III
     };
 
     // ── Storage upgrade levels (0-based index into storageTiers) ──
@@ -41,34 +41,49 @@ export class EconomyState {
       parts: 0,
     };
 
-    // ── Building tiers (1 = unlocked at tier 1, 0 = not built) ──
+    // ── Upgrade trees (all start unlocked, no tiers) ──
     this.buildings = {
-      commandCenter:   { tier: 1, maxTier: 4 },  // Starting building
-      crewFacilities:  { tier: 1, maxTier: 4 },  // Starting building
-      intelFacility:   { tier: 0, maxTier: 3 },  // Buildable
-      vehicleBay:      { tier: 0, maxTier: 4 },  // Buildable
-      helipad:         { tier: 0, maxTier: 3 },  // Buildable
-      airfield:        { tier: 0, maxTier: 4 },  // Buildable
+      commandCenter:   { tier: 1, maxTier: 1 },  // Logistics
+      crewFacilities:  { tier: 1, maxTier: 1 },  // Crew
+      vehicleBay:      { tier: 1, maxTier: 1 },  // Ground Support
+      helipad:         { tier: 1, maxTier: 1 },  // Air Support
     };
 
-    // ── Building tier costs (includes tier 1 = build cost) ──
-    this.tierCosts = {
-      commandCenter:  { 2: 0, 3: 0, 4: 0 },  // Free — gated by buildings built
-      crewFacilities: { 2: 8000, 3: 12000, 4: 18000 },
-      intelFacility:  { 1: 8000, 2: 14000, 3: 22000 },
-      vehicleBay:     { 1: 10000, 2: 16000, 3: 24000, 4: 18000 },
-      helipad:        { 1: 15000, 2: 18000, 3: 22000 },
-      airfield:       { 1: 20000, 2: 24000, 3: 30000, 4: 22000 },
+    // ── Tree tier costs (no tiers — all trees are flat) ──
+    this.tierCosts = {};
+
+    // ── Skill unlock costs (paid once from the base screen) ──
+    this.skillUnlockCosts = {
+      droneRecon:       4000,
+      sprinklerTrailer: 10000,
+      bulldozer:        16000,
+      helicopter:       12000,
+      reconPlane:       8000,
+      waterBomber:      20000,
     };
 
-    // ── Building display info ──
+    // ── Unlocked skills (Fire Crew, Fire Watch, Fire Truck start available) ──
+    this.unlockedSkills = new Set(["fireCrew", "fireWatch", "engineTruck"]);
+
+    // ── Skill display info (which building each skill belongs to + display name) ──
+    this.skillDisplayInfo = {
+      fireCrew:        { building: "crewFacilities", name: "Fire Crew",         tooltip: ["Cuts firebreak lines through forest", "Cost: 1 Food wear | Cooldown: 8s (deferred)", "No durability — uses crew readiness"] },
+      fireWatch:       { building: "crewFacilities", name: "Fire Watch",        tooltip: ["Static observation post — reveals area permanently", "Cost: 1 Food wear | Cooldown: 10s", "No durability — uses crew readiness"] },
+      droneRecon:      { building: "crewFacilities", name: "Drone Crew",        tooltip: ["Temporary moving recon — reveals area for 45s", "Cost: 1 Food wear | Cooldown: 10s", "Can be repositioned while active"] },
+      engineTruck:     { building: "vehicleBay",     name: "Fire Truck",        tooltip: ["Small area fire suppression zone", "Cost: 1 Fuel/use | 1 wear/4s", "Durability: 100"] },
+      sprinklerTrailer:{ building: "vehicleBay",     name: "Sprinkler Trailer", tooltip: ["Placed water sprinkler — wets area over time", "Cost: none | 1 wear/activation", "Durability: 100"] },
+      bulldozer:       { building: "vehicleBay",     name: "Bulldozer",         tooltip: ["Clears firebreak lines — uses energy bar", "Cost: 1 Fuel/s active | 1 wear/4s", "Durability: 100 | Energy: recharges when idle"] },
+      helicopter:      { building: "helipad",        name: "Helicopter",        tooltip: ["Aerial water/retardant drop", "Water: 5 Fuel | Retardant: 5 Fuel + 2 Ret", "Durability: 100 | 2 wear/deployment"] },
+      waterBomber:     { building: "helipad",        name: "Water Bomber",      tooltip: ["Heavy aerial suppression sortie", "Water: 8 Fuel | Retardant: 8 Fuel + 4 Ret", "Durability: 100 | 3 wear/sortie"] },
+      reconPlane:      { building: "helipad",        name: "Recon Plane",       tooltip: ["Large-scale strategic recon sweep", "Cost: $2,000 per deployment | 1 wear", "Durability: 100 | Reveals wide area"] },
+    };
+
+    // ── Tree display info ──
     this.buildingInfo = {
-      commandCenter:  { name: "Command Center",  role: "Strategic upgrades, logistics, and funding" },
-      crewFacilities: { name: "Crew Facilities",  role: "Fire Crew, Fire Watch" },
-      intelFacility:  { name: "Intel Facility",   role: "Forecasting, and recon" },
-      vehicleBay:     { name: "Vehicle Bay",      role: "Ground vehicles" },
-      helipad:        { name: "Helipad",           role: "Helicopter operations" },
-      airfield:       { name: "Airfield",          role: "Fixed-wing aircraft" },
+      commandCenter:  { name: "Logistics",      role: "Storage, forecasting, and funding" },
+      crewFacilities: { name: "Crew Support",            role: "Fire Crew, Fire Watch, Drone Recon" },
+      vehicleBay:     { name: "Ground Support",  role: "Ground vehicles" },
+      helipad:        { name: "Air Support",     role: "Helicopter, Water Bomber, Recon Plane" },
     };
 
     // ── Purchased upgrades (set of upgrade IDs) ──
@@ -76,78 +91,67 @@ export class EconomyState {
 
     // ── Upgrade catalog ──
     this.upgradeCatalog = {
-      // Command Center — includes all storage upgrades
-      betterForecast:   { building: "commandCenter",  tier: 2, cost: 6000,  label: "Better Pre-mission Forecast" },
-      moreChoices1:     { building: "commandCenter",  tier: 2, cost: 8000,  label: "More Mission Choices I" },
-      foodStorage2:     { building: "commandCenter",  tier: 2, cost: 8000,  label: "Food Storage II", effect: "storage", resource: "food", storageLevel: 1 },
-      fuelStorage2:     { building: "commandCenter",  tier: 2, cost: 10000, label: "Fuel Storage II", effect: "storage", resource: "fuel", storageLevel: 1 },
-      partsStorage2:    { building: "commandCenter",  tier: 2, cost: 10000, label: "Parts Storage II", effect: "storage", resource: "parts", storageLevel: 1 },
-      retStorage2:      { building: "commandCenter",  tier: 2, cost: 12000, label: "Retardant Storage II", effect: "storage", resource: "retardant", storageLevel: 1 },
-      foodStorage3:     { building: "commandCenter",  tier: 3, cost: 11000, label: "Food Storage III", effect: "storage", resource: "food", storageLevel: 2 },
-      fuelStorage3:     { building: "commandCenter",  tier: 3, cost: 14000, label: "Fuel Storage III", effect: "storage", resource: "fuel", storageLevel: 2 },
-      partsStorage3:    { building: "commandCenter",  tier: 3, cost: 14000, label: "Parts Storage III", effect: "storage", resource: "parts", storageLevel: 2 },
-      retStorage3:      { building: "commandCenter",  tier: 3, cost: 16000, label: "Retardant Storage III", effect: "storage", resource: "retardant", storageLevel: 2 },
-      moreChoices2:     { building: "commandCenter",  tier: 4, cost: 12000, label: "More Mission Choices II" },
-      fuelStorage4:     { building: "commandCenter",  tier: 4, cost: 18000, label: "Fuel Storage IV", effect: "storage", resource: "fuel", storageLevel: 3 },
-      retStorage4:      { building: "commandCenter",  tier: 4, cost: 22000, label: "Retardant Storage IV", effect: "storage", resource: "retardant", storageLevel: 3 },
+      // Logistics — storage and forecasting
+      weatherForecast:  { building: "commandCenter",  tier: 1, cost: 2000,  label: "Weather Forecast" },
+      betterForecast:   { building: "commandCenter",  tier: 1, cost: 4000,  label: "Better Weather Forecast" },
+      perfectForecast:  { building: "commandCenter",  tier: 1, cost: 6000,  label: "Perfect Weather Forecast" },
+      foodStorage2:     { building: "commandCenter",  tier: 1, cost: 8000,  label: "Food Storage I",       effect: "storage", resource: "food",      storageLevel: 1 },
+      foodStorage3:     { building: "commandCenter",  tier: 1, cost: 11000, label: "Food Storage II",      effect: "storage", resource: "food",      storageLevel: 2 },      
+      fuelStorage2:     { building: "commandCenter",  tier: 1, cost: 10000, label: "Fuel Storage I",       effect: "storage", resource: "fuel",      storageLevel: 1 },
+      fuelStorage3:     { building: "commandCenter",  tier: 1, cost: 14000, label: "Fuel Storage II",      effect: "storage", resource: "fuel",      storageLevel: 2 },
+      fuelStorage4:     { building: "commandCenter",  tier: 1, cost: 18000, label: "Fuel Storage III",       effect: "storage", resource: "fuel",      storageLevel: 3 },      
+      partsStorage2:    { building: "commandCenter",  tier: 1, cost: 8000,  label: "Parts Storage I",      effect: "storage", resource: "parts",     storageLevel: 1 },
+      partsStorage3:    { building: "commandCenter",  tier: 1, cost: 11000, label: "Parts Storage II",     effect: "storage", resource: "parts",     storageLevel: 2 },      
+      retStorage2:      { building: "commandCenter",  tier: 1, cost: 12000, label: "Retardant Storage I",  effect: "storage", resource: "retardant", storageLevel: 1 },
+      retStorage3:      { building: "commandCenter",  tier: 1, cost: 16000, label: "Retardant Storage II", effect: "storage", resource: "retardant", storageLevel: 2 },
+      retStorage4:      { building: "commandCenter",  tier: 1, cost: 22000, label: "Retardant Storage III",  effect: "storage", resource: "retardant", storageLevel: 3 },
 
-      // Crew Facilities
-      fasterCutting:    { building: "crewFacilities", tier: 2, cost: 6000,  label: "Faster Firebreak Cutting" },
-      reducedUnderfed1: { building: "crewFacilities", tier: 2, cost: 7000,  label: "Reduced Underfed Effects I" },
-      crewAvail1:       { building: "crewFacilities", tier: 2, cost: 12000, label: "Watch & Drone Availability I" },
-      fireWatchSight1:  { building: "crewFacilities", tier: 2, cost: 8000,  label: "Fire Watch Sight I" },
-      crewStamina1:     { building: "crewFacilities", tier: 2, cost: 7000,  label: "Improved Crew Stamina I" },
-      crewRecovery:     { building: "crewFacilities", tier: 3, cost: 9000,  label: "Reduced Crew Recovery" },
-      lowerFoodCons1:   { building: "crewFacilities", tier: 3, cost: 8000,  label: "Lower Food Consumption I" },
-      crewRadius1:      { building: "crewFacilities", tier: 3, cost: 9000,  label: "Wider Cutting Radius I" },
-      crewStamina2:     { building: "crewFacilities", tier: 3, cost: 10000, label: "Improved Crew Stamina II" },
-      crewAvail2:       { building: "crewFacilities", tier: 4, cost: 18000, label: "Watch & Drone Availability II" },
-      reducedUnderfed2: { building: "crewFacilities", tier: 4, cost: 12000, label: "Reduced Underfed Effects II" },
-      lowerFoodCons2:   { building: "crewFacilities", tier: 4, cost: 12000, label: "Lower Food Consumption II" },
-      fireWatchSight2:  { building: "crewFacilities", tier: 4, cost: 12000, label: "Fire Watch Sight II" },
-      crewRadius2:      { building: "crewFacilities", tier: 4, cost: 14000, label: "Wider Cutting Radius II" },
+      // Crew — fire crew, fire watch, and drone recon
+      fasterCutting:    { building: "crewFacilities", tier: 1, skill: "fireCrew",       cost: 2000,  label: "Faster Firebreak Cutting" },
+      fireWatchSight1:  { building: "crewFacilities", tier: 1, skill: "fireWatch",      cost: 2000,  label: "Fire Watch Sight I" },
+      lowerFoodCons1:   { building: "crewFacilities", tier: 1,                          cost: 3000,  label: "Lower Food Consumption I" },
+      crewRecovery:     { building: "crewFacilities", tier: 1, skill: "fireCrew",       cost: 4000,  label: "Reduced Crew Recovery" },
+      crewRadius1:      { building: "crewFacilities", tier: 1, skill: "fireCrew",       cost: 8000,  label: "Wider Cutting Radius I" },
+      crewRadius2:      { building: "crewFacilities", tier: 1, skill: "fireCrew",       cost: 10000, label: "Wider Cutting Radius II" },
+      crewStamina1:     { building: "crewFacilities", tier: 1, skill: "fireCrew",       cost: 4000,  label: "Improved Crew Stamina I" },
+      crewStamina2:     { building: "crewFacilities", tier: 1, skill: "fireCrew",       cost: 8000,  label: "Improved Crew Stamina II" },
+      lowerFoodCons2:   { building: "crewFacilities", tier: 1,                          cost: 6000,  label: "Lower Food Consumption II" },
+      fireWatchSight2:  { building: "crewFacilities", tier: 1, skill: "fireWatch",      cost: 3000,  label: "Fire Watch Sight II" },
+      droneControl:     { building: "crewFacilities", tier: 1, skill: "droneRecon",     cost: 2000,  label: "Improved Drone Control" },
+      droneRadius1:     { building: "crewFacilities", tier: 1, skill: "droneRecon",     cost: 2000,  label: "Drone Reveal Radius I" },
+      droneRadius2:     { building: "crewFacilities", tier: 1, skill: "droneRecon",     cost: 4000,  label: "Drone Reveal Radius II" },
+      droneDuration1:   { building: "crewFacilities", tier: 1, skill: "droneRecon",     cost: 2000,  label: "Drone Duration I" },
+      droneDuration2:   { building: "crewFacilities", tier: 1, skill: "droneRecon",     cost: 4000,  label: "Drone Duration II" },
 
-      // Intel Facility
-      weatherForecast:  { building: "intelFacility",  tier: 1, cost: 6000,  label: "Weather Forecast" },
-      droneRadius1:     { building: "intelFacility",  tier: 1, cost: 8000,  label: "Drone Reveal Radius I" },
-      droneDuration1:   { building: "intelFacility",  tier: 1, cost: 8000,  label: "Drone Duration I" },
-      droneControl:     { building: "intelFacility",  tier: 2, cost: 8000,  label: "Improved Drone Control" },
-      droneRadius2:     { building: "intelFacility",  tier: 2, cost: 12000, label: "Drone Reveal Radius II" },
-      droneDuration2:   { building: "intelFacility",  tier: 2, cost: 12000, label: "Drone Duration II" },
-      reconScanRadius:  { building: "intelFacility",  tier: 3, cost: 12000, label: "Larger Recon Scan Radius" },
-      reconDuration:    { building: "intelFacility",  tier: 3, cost: 12000, label: "Longer Recon Duration" },
-      perfectForecast:  { building: "intelFacility",  tier: 3, cost: 14000, label: "Perfect Weather Forecast" },
+      // Ground Support — ground vehicles
+      engineRadius:     { building: "vehicleBay",     tier: 1, skill: "engineTruck",      cost: 8000,  label: "Fire Truck Radius" },
+      engineSuppression:{ building: "vehicleBay",     tier: 1, skill: "engineTruck",      cost: 8000,  label: "Fire Truck Suppression" },
+      engineMobility:   { building: "vehicleBay",     tier: 1, skill: "engineTruck",      cost: 8000,  label: "Fire Truck Durability I" },
+      engineRecharge:   { building: "vehicleBay",     tier: 1, skill: "engineTruck",      cost: 8000,  label: "Fire Truck Durability II" },
+      sprinklerRadius:  { building: "vehicleBay",     tier: 1, skill: "sprinklerTrailer", cost: 8000,  label: "Sprinkler Radius" },
+      //sprinklerDur:     { building: "vehicleBay",     tier: 1, skill: "sprinklerTrailer", cost: 8000,  label: "Sprinkler Duration" },
+      sprinklerCooldown:{ building: "vehicleBay",     tier: 1, skill: "sprinklerTrailer", cost: 8000,  label: "Sprinkler Cooldown Reduction" },
+      dozerSpeed:       { building: "vehicleBay",     tier: 1, skill: "bulldozer",        cost: 10000, label: "Dozer Speed" },
+      dozerRecharge:    { building: "vehicleBay",     tier: 1, skill: "bulldozer",        cost: 10000, label: "Dozer Recharge Speed" },
+      dozerLineWidth:   { building: "vehicleBay",     tier: 1, skill: "bulldozer",        cost: 10000, label: "Dozer Line Width" },
+      vehicleWear1:     { building: "vehicleBay",     tier: 1, skill: "bulldozer",        cost: 9000,  label: "Dozer Wear I" },
+      vehicleWear2:     { building: "vehicleBay",     tier: 1, skill: "bulldozer",        cost: 10000, label: "Dozer Wear II" },
+      vehicleFuelEff1:  { building: "vehicleBay",     tier: 1, skill: "bulldozer",        cost: 9000,  label: "Dozer Fuel Efficiency I" },
+      vehicleFuelEff2:  { building: "vehicleBay",     tier: 1, skill: "bulldozer",        cost: 10000, label: "Dozer Fuel Efficiency II" },
 
-      // Vehicle Bay
-      engineRadius:     { building: "vehicleBay",     tier: 1, cost: 10000, label: "Fire Truck Radius" },
-      engineSuppression:{ building: "vehicleBay",     tier: 2, cost: 10000, label: "Fire Truck Suppression" },
-      engineMobility:   { building: "vehicleBay",     tier: 1, cost: 10000, label: "Fire Truck Durability I" },
-      engineRecharge:   { building: "vehicleBay",     tier: 1, cost: 10000, label: "Fire Truck Durability II" },
-      sprinklerRadius:  { building: "vehicleBay",     tier: 2, cost: 8000,  label: "Sprinkler Radius" },
-      sprinklerDur:     { building: "vehicleBay",     tier: 2, cost: 8000,  label: "Sprinkler Duration" },
-      sprinklerCooldown:{ building: "vehicleBay",     tier: 2, cost: 9000,  label: "Sprinkler Cooldown Reduction" },
-      vehicleWear1:     { building: "vehicleBay",     tier: 2, cost: 9000,  label: "Dozer Wear I" },
-      vehicleFuelEff1:  { building: "vehicleBay",     tier: 2, cost: 9000,  label: "Dozer Fuel Efficiency I" },
-      dozerSpeed:       { building: "vehicleBay",     tier: 3, cost: 8000,  label: "Dozer Speed" },
-      dozerLineWidth:   { building: "vehicleBay",     tier: 3, cost: 9000,  label: "Dozer Line Width" },
-      vehicleFuelEff2:  { building: "vehicleBay",     tier: 3, cost: 13000, label: "Dozer Fuel Efficiency II" },
-      vehicleWear2:     { building: "vehicleBay",     tier: 3, cost: 13000, label: "Dozer Wear II" },
-      dozerRecharge:    { building: "vehicleBay",     tier: 3, cost: 10000, label: "Dozer Recharge Speed" },
-
-      // Helipad
-      heliFuelEff:      { building: "helipad",        tier: 1, cost: 11000, label: "Better Fuel Efficiency" },
-      heliDurability:   { building: "helipad",        tier: 1, cost: 11000, label: "Better Durability" },
-      heliSuppression:  { building: "helipad",        tier: 2, cost: 14000, label: "Larger Suppression Zone" },
-      heliTurnaround1:  { building: "helipad",        tier: 2, cost: 15000, label: "Reduced Turnaround I" },
-      heliTurnaround2:  { building: "helipad",        tier: 3, cost: 20000, label: "Reduced Turnaround II" },
-
-      // Airfield
-      bomberFuelEff:    { building: "airfield",       tier: 1, cost: 13000, label: "Better Fuel Efficiency" },
-      bomberRetEff:     { building: "airfield",       tier: 1, cost: 14000, label: "Better Retardant Efficiency" },
-      bomberDurability: { building: "airfield",       tier: 1, cost: 13000, label: "Increased Bomber Durability" },
-      bomberTurnaround: { building: "airfield",       tier: 2, cost: 18000, label: "Reduced Turnaround" },
-      bomberDrop1:      { building: "airfield",       tier: 2, cost: 18000, label: "Larger Bomber Drop I" },
-      bomberDrop2:      { building: "airfield",       tier: 3, cost: 22000, label: "Larger Bomber Drop II" },
+      // Air Support — helicopter, water bomber, and recon plane
+      heliFuelEff:      { building: "helipad",        tier: 1, skill: "helicopter",  cost: 11000, label: "Heli Fuel Efficiency" },
+      heliDurability:   { building: "helipad",        tier: 1, skill: "helicopter",  cost: 11000, label: "Heli Durability" },
+      heliSuppression:  { building: "helipad",        tier: 1, skill: "helicopter",  cost: 14000, label: "Heli Larger Drop" },
+      heliTurnaround1:  { building: "helipad",        tier: 1, skill: "helicopter",  cost: 15000, label: "Heli Turnaround I" },
+      heliTurnaround2:  { building: "helipad",        tier: 1, skill: "helicopter",  cost: 20000, label: "Heli Turnaround II" },
+      bomberFuelEff:    { building: "helipad",        tier: 1, skill: "waterBomber", cost: 13000, label: "Bomber Fuel Efficiency" },
+      bomberRetEff:     { building: "helipad",        tier: 1, skill: "waterBomber", cost: 14000, label: "Bomber Retardant Efficiency" },
+      bomberDurability: { building: "helipad",        tier: 1, skill: "waterBomber", cost: 13000, label: "Bomber Durability" },
+      bomberTurnaround: { building: "helipad",        tier: 1, skill: "waterBomber", cost: 18000, label: "Bomber Turnaround" },
+      bomberDrop1:      { building: "helipad",        tier: 1, skill: "waterBomber", cost: 18000, label: "Bomber Larger Drop I" },
+      bomberDrop2:      { building: "helipad",        tier: 1, skill: "waterBomber", cost: 22000, label: "Bomber Larger Drop II" },
+      reconDuration:    { building: "helipad",        tier: 1, skill: "reconPlane",  cost: 8000,  label: "Recon Longer Duration" },
     };
 
     // ── Asset durability (100 max, persists between missions) ──
@@ -163,11 +167,35 @@ export class EconomyState {
     // ── Crew fed status (0-100, persists between missions) ──
     this.crewFedStatus = 100;
 
-    // ── Mission loadout slots (based on Command Center tier) ──
+    // ── Mission loadout slots ──
     this.loadoutSlots = 2;
 
     // ── Fallback funding tier ──
     this.fallbackFundingTier = 1;
+
+    // ── Completed missions ──
+    this.completedMissions = new Set();
+    this.missionBestDays = {}; // id -> best (highest) day reached for endless missions
+  }
+
+  // ── Completed missions ──
+
+  markMissionComplete(id) {
+    if (id) this.completedMissions.add(id);
+  }
+
+  isMissionComplete(id) {
+    return this.completedMissions.has(id);
+  }
+
+  setMissionBestDay(id, day) {
+    if (!id || day == null) return;
+    const current = this.missionBestDays[id] ?? -Infinity;
+    if (day > current) this.missionBestDays[id] = day;
+  }
+
+  getMissionBestDay(id) {
+    return this.missionBestDays[id] ?? null;
   }
 
   // ── Storage caps ──
@@ -196,30 +224,35 @@ export class EconomyState {
     const toBuy = Math.min(amount, canFit, canAfford);
     if (toBuy <= 0) return 0;
     this[resource] += toBuy;
-    this.money -= toBuy * price;
+    this.money = Math.floor(this.money - toBuy * price);
     return toBuy;
   }
 
-  // ── Asset unlocks (derived from building tiers) ──
+  refuelAllVehicles() {
+    // Refuel fuel reserve to storage cap in one action, using money as needed.
+    return this.buyResource("fuel", Number.MAX_SAFE_INTEGER);
+  }
 
-  get hasFireCrew()         { return this.buildings.crewFacilities.tier >= 1; }
-  get hasFireWatch()        { return this.buildings.crewFacilities.tier >= 1; }
-  get hasDroneRecon()       { return this.buildings.intelFacility.tier >= 1; }
-  get hasBulldozer()        { return this.buildings.vehicleBay.tier >= 3; }
-  get hasSprinklerTrailer() { return this.buildings.vehicleBay.tier >= 2; }
-  get hasEngineTruck()      { return this.buildings.vehicleBay.tier >= 1; }
-  get hasHelicopter()       { return this.buildings.helipad.tier >= 1; }
-  get hasWaterBomber()      { return this.buildings.airfield.tier >= 1; }
-  get hasReconPlane()       { return this.buildings.intelFacility.tier >= 3; }
+  buyMaxResource(resource) {
+    return this.buyResource(resource, Number.MAX_SAFE_INTEGER);
+  }
 
-  // ── Building unlock checks ──
+  // ── Asset unlocks (gated by skill unlock purchases) ──
+
+  get hasFireCrew()         { return this.unlockedSkills.has("fireCrew"); }
+  get hasFireWatch()        { return this.unlockedSkills.has("fireWatch"); }
+  get hasDroneRecon()       { return this.unlockedSkills.has("droneRecon"); }
+  get hasBulldozer()        { return this.unlockedSkills.has("bulldozer"); }
+  get hasSprinklerTrailer() { return this.unlockedSkills.has("sprinklerTrailer"); }
+  get hasEngineTruck()      { return this.unlockedSkills.has("engineTruck"); }
+  get hasHelicopter()       { return this.unlockedSkills.has("helicopter"); }
+  get hasWaterBomber()      { return this.unlockedSkills.has("waterBomber"); }
+  get hasReconPlane()       { return this.unlockedSkills.has("reconPlane"); }
+
+  // ── Tree unlock checks ──
 
   isBuildingAvailable(buildingId) {
-    if (!this.buildings[buildingId]) return false;
-    // Starting buildings are always available
-    if (buildingId === "commandCenter" || buildingId === "crewFacilities") return true;
-    // Non-starting buildings are always available to build
-    return true;
+    return !!this.buildings[buildingId];
   }
 
   // ── Tier upgrades ──
@@ -230,13 +263,6 @@ export class EconomyState {
     if (!this.isBuildingAvailable(buildingId)) return false;
     const nextTier = building.tier + 1;
     if (nextTier > building.maxTier) return false;
-
-    // Command Center: free upgrade, gated by number of non-starting buildings built
-    if (buildingId === "commandCenter") {
-      const builtCount = ["intelFacility", "vehicleBay", "helipad", "airfield"]
-        .filter(id => this.buildings[id].tier >= 1).length;
-      return builtCount >= (nextTier - 1);
-    }
 
     const cost = this.tierCosts[buildingId]?.[nextTier];
     if (cost === undefined) return false;
@@ -254,7 +280,7 @@ export class EconomyState {
     if (!this.canUpgradeTier(buildingId)) return false;
     const building = this.buildings[buildingId];
     const cost = this.getTierUpgradeCost(buildingId);
-    this.money -= cost;
+    this.money = Math.floor(this.money - cost);
     building.tier += 1;
 
     // Apply side effects of tier upgrades
@@ -293,6 +319,8 @@ export class EconomyState {
     if (this.upgrades.has(upgradeId)) return false;
     const buildingTier = this.buildings[def.building]?.tier ?? 0;
     if (def.tier > buildingTier) return false;
+    // Skill must be unlocked before its upgrades are available
+    if (def.skill && !this.unlockedSkills.has(def.skill)) return false;
     // Check prerequisites for sequential upgrades (e.g., fuelStorage3 requires fuelStorage2)
     const prereq = this._getUpgradePrerequisite(upgradeId);
     if (prereq && !this.upgrades.has(prereq)) return false;
@@ -303,6 +331,8 @@ export class EconomyState {
     // Manual prerequisites for upgrades that don't follow the numeric suffix pattern
     const manualPrereqs = {
       engineSuppression: "engineRadius",
+      betterForecast:    "weatherForecast",
+      perfectForecast:   "betterForecast",
     };
     if (manualPrereqs[upgradeId]) return manualPrereqs[upgradeId];
 
@@ -321,7 +351,7 @@ export class EconomyState {
   buyUpgrade(upgradeId) {
     if (!this.canBuyUpgrade(upgradeId)) return false;
     const def = this.upgradeCatalog[upgradeId];
-    this.money -= def.cost;
+    this.money = Math.floor(this.money - def.cost);
     this.upgrades.add(upgradeId);
     // Apply storage effects
     if (def.effect === "storage") {
@@ -333,20 +363,75 @@ export class EconomyState {
     return true;
   }
 
-  // ── Durability / Repair ──
+  // ── Skill unlocks ──
 
-  repairAsset(assetId, partsToSpend) {
-    if (this.parts < partsToSpend) return 0;
+  canUnlockSkill(skillId) {
+    if (this.unlockedSkills.has(skillId)) return false;
+    const cost = this.skillUnlockCosts[skillId];
+    return cost !== undefined && this.money >= cost;
+  }
+
+  unlockSkill(skillId) {
+    if (!this.canUnlockSkill(skillId)) return false;
+    this.money = Math.floor(this.money - this.skillUnlockCosts[skillId]);
+    this.unlockedSkills.add(skillId);
+    return true;
+  }
+
+  getSkillUnlockCost(skillId) {
+    return this.skillUnlockCosts[skillId] ?? 0;
+  }
+
+  /** Returns skills belonging to a building, in display order. */
+  getSkillsForBuilding(buildingId) {
+    return Object.entries(this.skillDisplayInfo)
+      .filter(([, info]) => info.building === buildingId)
+      .map(([skillId, info]) => ({
+        skillId,
+        name: info.name,
+        unlocked: this.unlockedSkills.has(skillId),
+        cost: this.skillUnlockCosts[skillId] ?? 0,
+      }));
+  }
+
+  /** Returns all upgrades that require a specific skill to be unlocked. */
+  getUpgradesForSkill(skillId) {
+    const results = [];
+    for (const [id, def] of Object.entries(this.upgradeCatalog)) {
+      if (def.skill !== skillId) continue;
+      results.push({ id, ...def, purchased: this.upgrades.has(id) });
+    }
+    return results;
+  }
+
+  /** Returns upgrades tied directly to a building with no skill requirement (Logistics). */
+  getDirectUpgradesForBuilding(buildingId) {
+    const results = [];
+    for (const [id, def] of Object.entries(this.upgradeCatalog)) {
+      if (def.building !== buildingId || def.skill) continue;
+      results.push({ id, ...def, purchased: this.upgrades.has(id) });
+    }
+    return results;
+  }
+
+  repairAsset(assetId) {
     const current = this.assetDurability[assetId];
-    if (current === undefined || current >= 100) return 0;
-    const maxRestore = 100 - current;
-    const durabilityFromParts = partsToSpend * 10; // 1 part = 10 durability
-    const actual = Math.min(maxRestore, durabilityFromParts);
-    const partsUsed = Math.ceil(actual / 10);
-    this.parts -= partsUsed;
-    this.assetDurability[assetId] += partsUsed * 10;
-    if (this.assetDurability[assetId] > 100) this.assetDurability[assetId] = 100;
-    return partsUsed;
+    if (current === undefined || current >= 100) return false;
+    const cost = Math.floor((100 - current) * 2); // $2 per durability point
+    if (this.money < cost) return false;
+    this.money = Math.floor(this.money - cost);
+    this.assetDurability[assetId] = 100;
+    return true;
+  }
+
+  // Repair all vehicles, charging $1 per missing durability point
+  repairAllVehicles() {
+    const assets = ["engineTruck", "sprinklerTrailer", "bulldozer", "helicopter", "waterBomber", "reconPlane"];
+    let repaired = false;
+    for (const assetId of assets) {
+      if (this.repairAsset(assetId)) repaired = true;
+    }
+    return repaired;
   }
 
   isAssetAvailable(assetId) {
@@ -422,18 +507,34 @@ export class EconomyState {
     return true; // Crew always available, just slower when hungry
   }
 
-  // Feed crew: spend 1 food to restore 20 crewFedStatus
+  // Feed crew: spend 1 food to restore 10 crewFedStatus
   feedCrew() {
     if (this.food <= 0 || this.crewFedStatus >= 100) return false;
     this.food -= 1;
-    this.crewFedStatus = Math.min(100, this.crewFedStatus + 20);
+    this.crewFedStatus = Math.min(100, this.crewFedStatus + 10);
     return true;
+  }
+
+  // Feed crew fully, auto-buy food as needed
+  feedCrewFully() {
+    if (this.crewFedStatus >= 100) return 0;
+    const requiredFood = Math.ceil((100 - this.crewFedStatus) / 10);
+    const missingFood = Math.max(0, requiredFood - this.food);
+    if (missingFood > 0) {
+      this.buyResource("food", missingFood);
+    }
+
+    let fedCount = 0;
+    while (this.feedCrew()) {
+      fedCount += 1;
+    }
+    return fedCount;
   }
 
   // ── Mission rewards ──
 
   addMissionReward(amount) {
-    this.money += amount;
+    this.money = Math.floor(this.money + amount);
   }
 
   // ── Fallback funding ──
@@ -464,10 +565,13 @@ export class EconomyState {
       storageLevel: { ...this.storageLevel },
       buildings: {},
       upgrades: [...this.upgrades],
+      unlockedSkills: [...this.unlockedSkills],
       assetDurability: { ...this.assetDurability },
       crewFedStatus: this.crewFedStatus,
       loadoutSlots: this.loadoutSlots,
       fallbackFundingTier: this.fallbackFundingTier,
+      completedMissions: [...this.completedMissions],
+      missionBestDays: { ...this.missionBestDays },
     };
     for (const [id, b] of Object.entries(this.buildings)) {
       data.buildings[id] = { tier: b.tier };
@@ -486,8 +590,8 @@ export class EconomyState {
       if (!raw) return false;
       const data = JSON.parse(raw);
 
-      this.money = data.money ?? 12000;
-      this.tutorialComplete = data.tutorialComplete ?? false;
+      this.money = Math.floor(data.money ?? 12000);
+      this.tutorialComplete = true;  // Tutorial disabled
       this.fuel = data.fuel ?? 15;
       this.retardant = data.retardant ?? 0;
       this.food = data.food ?? 2;
@@ -514,6 +618,9 @@ export class EconomyState {
       this.crewFedStatus = data.crewFedStatus ?? 100;
       this.loadoutSlots = data.loadoutSlots ?? 2;
       this.fallbackFundingTier = data.fallbackFundingTier ?? 1;
+      this.unlockedSkills = new Set(data.unlockedSkills ?? ["fireCrew", "fireWatch", "engineTruck"]);
+      this.completedMissions = new Set(data.completedMissions ?? []);
+      this.missionBestDays = data.missionBestDays ?? {};
       return true;
     } catch { return false; }
   }

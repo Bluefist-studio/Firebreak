@@ -1,7 +1,9 @@
 import { GameState } from "../core/GameState.js";
+import { getMissionReward } from "../data/missions.js";
 import { FireControlModal } from "./FireControlModal.js";
 import { HelpTooltipsModal } from "./HelpTooltipsModal.js";
 import { SkillHotbarHUD } from "./SkillHotbarHUD.js";
+import { SkillWheelHUD } from "./SkillWheelHUD.js";
 import { TopStatusHUD } from "./TopStatusHUD.js";
 
 export class PlayScreen {
@@ -17,6 +19,7 @@ export class PlayScreen {
     this.fireControlModal = null;
     this.helpTooltipsModal = new HelpTooltipsModal();
     this.skillHotbarHUD = null;
+    this.skillWheelHUD = null;
     this.topStatusHUD = null;
     this.keys = {};
     this.mouse = { x: 0, y: 0 };
@@ -36,6 +39,15 @@ export class PlayScreen {
     // Game speed control
     this.gameSpeed = 1;
     this.speedLevels = [1, 2, 3, 5];
+
+    // Edge scrolling
+    this.edgeScrollEnabled = localStorage.getItem('fb_edgeScroll') === '1';
+    this._edgeScrollZone = 80; // px from canvas edge that triggers scroll
+
+    // Cursor drift — viewport center slowly follows the cursor
+    this.cursorDriftEnabled = localStorage.getItem('fb_cursorDrift') === '1';
+    this._cursorDriftSpeed  = 0.10; // world-units/s per world-unit of offset beyond dead-zone
+    this._cursorDriftRadius = 200;  // canvas-px dead-zone — no drift inside this radius
 
     // End-of-mission overlay (shown in-place before navigating away)
     this._missionOver = false;
@@ -99,6 +111,7 @@ export class PlayScreen {
       
       this.fireControlModal = new FireControlModal({ gameState: this.gameState });
       this.skillHotbarHUD = new SkillHotbarHUD({ gameState: this.gameState });
+      this.skillWheelHUD = new SkillWheelHUD({ gameState: this.gameState, icons: this.sprites?.wheelIcons ?? {} });
       this.topStatusHUD = new TopStatusHUD({ gameState: this.gameState, playScreen: this });
       this.gameState.start();
     }
@@ -134,12 +147,12 @@ export class PlayScreen {
       this.onLevelComplete?.(this.gameState.money);
 
       // Calculate and apply mission reward (skip for free/training modes and failures)
-      let reward = this.currentMission?.missionReward ?? 0;
+      let reward = getMissionReward(this.currentMission);
       const isFreeMode = this.gameMode?.isSkillFree?.() ?? false;
 
-      // Fire Season: day-based reward formula
-      if (!isFreeMode && this.currentMission?.id === "fire_season" && this.gameMode?.currentDay != null) {
-        reward = 1000 + 500 * this.gameMode.currentDay;
+      // Let the mode override the reward formula if it wants to
+      if (!isFreeMode && typeof this.gameMode?.getDayReward === "function") {
+        reward = this.gameMode.getDayReward();
       }
 
       if (isFailed) reward = 0;
@@ -148,8 +161,13 @@ export class PlayScreen {
         this.economyState.addMissionReward(reward);
       }
 
+      this.gameMode?.addDayReward?.(reward);
+
       // Food is now consumed in real-time during mission — just track total for display
       const foodWear = Math.ceil(this.gameState.foodWearAccumulated || 0);
+      const fuelConsumed = this.gameState.fuelConsumed || 0;
+      const retardantConsumed = this.gameState.retardantConsumed || 0;
+      this.gameMode?.addDayResources?.(foodWear, fuelConsumed, retardantConsumed);
 
       // Fallback government funding — only granted on mission failure if player is low (skip for training)
       let fallbackGrant = 0;
@@ -157,10 +175,19 @@ export class PlayScreen {
         const fundingAmount = this.economyState.getFallbackFunding();
         if (this.economyState.money < fundingAmount) {
           fallbackGrant = fundingAmount - this.economyState.money;
-          this.economyState.money = fundingAmount;
+          this.economyState.money = Math.floor(fundingAmount);
         }
       }
       
+      // Mark standalone missions as completed on win
+      if (!isFailed && !isFreeMode && this.economyState && this.currentMission?.id) {
+        this.economyState.markMissionComplete(this.currentMission.id);
+        // For endless mode, record the best day reached
+        if (this.currentMission.id === "fire_season" && this.gameMode?.currentDay != null) {
+          this.economyState.setMissionBestDay(this.currentMission.id, this.gameMode.currentDay);
+        }
+      }
+
       // Persist money and state for endless/campaign modes
       this.gameMode?.onLevelComplete?.(this.gameState.money);
 
@@ -182,6 +209,14 @@ export class PlayScreen {
         currentDay: this.gameMode?.currentDay ?? 0,
         settlements: this.gameState.settlements ?? [],
         settlementFailed: this.gameState.settlementFailed ?? false,
+        economy: this.economyState ?? null,
+        seasonRewardsTotal: this.gameMode?.seasonRewardsTotal ?? 0,
+        seasonFoodWear: this.gameMode?.seasonFoodWear ?? 0,
+        seasonFuelConsumed: this.gameMode?.seasonFuelConsumed ?? 0,
+        seasonRetardantConsumed: this.gameMode?.seasonRetardantConsumed ?? 0,
+        nextDayMission: (this.currentMission?.id === "fire_season" && !isFailed)
+          ? (this.gameMode?.getNextDayMission?.(this.currentMission) ?? null)
+          : null,
       };
       return;
     }
@@ -196,6 +231,37 @@ export class PlayScreen {
     if (this.keys["s"]) cam.y += panSpeed;
     if (this.keys["a"]) cam.x -= panSpeed;
     if (this.keys["d"]) cam.x += panSpeed;
+
+    // Edge scrolling (only when skill wheel is closed and no modal is open)
+    if (this.edgeScrollEnabled && !this.skillWheelHUD?.isOpen && !this.fireControlModal?.isExpanded) {
+      const ez = this._edgeScrollZone;
+      const mx = this.mouse.x;
+      const my = this.mouse.y;
+      const cw = this.canvas.width;
+      const ch = this.canvas.height;
+      // Scale scroll speed with distance into the zone (0 at edge boundary → full at corner)
+      if (mx < ez)          cam.x -= panSpeed * (1 - mx / ez);
+      if (mx > cw - ez)     cam.x += panSpeed * (1 - (cw - mx) / ez);
+      if (my < ez)          cam.y -= panSpeed * (1 - my / ez);
+      if (my > ch - ez)     cam.y += panSpeed * (1 - (ch - my) / ez);
+    }
+
+    // Cursor drift — softly nudge viewport center toward the cursor world position
+    if (this.cursorDriftEnabled && !this.skillWheelHUD?.isOpen) {
+      // Drift origin: canvas center
+      const dxPx = this.mouse.x - this.canvas.width / 2;
+      const dyPx = this.mouse.y - this.canvas.height / 2;
+      const distPx = Math.sqrt(dxPx * dxPx + dyPx * dyPx);
+      const deadR  = this._cursorDriftRadius;
+      if (distPx > deadR) {
+        // Only the portion beyond the dead zone drives the drift, scaled to world units
+        const excess   = distPx - deadR;
+        const driftDx  = (dxPx / distPx) * (excess / cam.zoom);
+        const driftDy  = (dyPx / distPx) * (excess / cam.zoom);
+        cam.x += driftDx * this._cursorDriftSpeed * dt;
+        cam.y += driftDy * this._cursorDriftSpeed * dt;
+      }
+    }
 
     cam.x = Math.max(0, Math.min(this.gameState.forest.width - viewW, cam.x));
     cam.y = Math.max(0, Math.min(this.gameState.forest.height - viewH, cam.y));
@@ -225,15 +291,25 @@ export class PlayScreen {
     }
 
     this.topStatusHUD?.render(ctx);
+    this.gameState?._drawWindCompass(ctx);
     
     // Only show FireControlModal if mode allows it
     if (this.gameMode?.shouldShowFireControl?.() ?? true) {
       this.fireControlModal?.render(ctx);
     }
     
-    this.skillHotbarHUD?.render(ctx);
+    // this.skillHotbarHUD?.render(ctx);
+    this.gameState?._drawMiniMap(ctx);
     this.helpTooltipsModal?.render(ctx);
-    
+
+    // Recon plane sweep overlay — drawn absolutely last, on top of all HUDs
+    if (this.gameState?.reconPlaneMode) {
+      this.gameState._drawReconPlaneOverlay(ctx);
+    }
+
+    // Skill wheel — drawn on top of all HUDs
+    this.skillWheelHUD?.render(ctx);
+
     // Display announcement overlay if active
     if (this.showingAnnouncement) {
       // Calculate opacity - fade out over time
@@ -254,11 +330,37 @@ export class PlayScreen {
 
     // Handle end-of-mission overlay buttons first
     if (this._missionOver) {
+      this.skillWheelHUD?.close();
       for (const btn of this._resultsButtons) {
         if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
           btn.callback();
           return;
         }
+      }
+      return;
+    }
+
+    // Middle mouse button: open / close skill wheel
+    if (evt?.button === 1) {
+      if (this.skillWheelHUD?.isOpen) {
+        this.skillWheelHUD.close();
+      } else if (this.gameState && !this.gameState.over) {
+        const scale = Math.min(this.canvas.width / 1280, this.canvas.height / 720, 2);
+        const outerR = Math.round(145 * scale);
+        const clampedX = Math.max(outerR, Math.min(this.canvas.width  - outerR, x));
+        const clampedY = Math.max(outerR, Math.min(this.canvas.height - outerR, y));
+        this.skillWheelHUD?.open(clampedX, clampedY);
+      }
+      return;
+    }
+
+    // Left-click while skill wheel is open: confirm hovered slice
+    if (this.skillWheelHUD?.isOpen && evt?.button === 0) {
+      const result = this.skillWheelHUD.confirmAndClose();
+      if (result) {
+        if (result.skillKey === 1) this.gameState.waterBomberUseRetardant = result.retardant;
+        if (result.skillKey === 2) this.gameState.heliDropUseRetardant    = result.retardant;
+        this.skillHotbarHUD?.activateSkill(result.skillKey);
       }
       return;
     }
@@ -269,6 +371,16 @@ export class PlayScreen {
         return;
       }
       // keep allowing clicks to fall through when background is clicked
+    }
+
+    // Check minimap resize buttons
+    if (this.gameState?._miniMapButtons?.length > 0) {
+      for (const btn of this.gameState._miniMapButtons) {
+        if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
+          btn.action();
+          return;
+        }
+      }
     }
 
     // Check if click is on the clock/speed controls
@@ -297,7 +409,7 @@ export class PlayScreen {
     }
 
     // Pass pointer input to GameState (for camera centering and skill usage).
-    if (!this.gameState?.started || evt.button === 1) {
+    if (!this.gameState?.started) {
       this.gameState?.handlePointerDown(x, y, evt);
     } else {
       // If a skill is selected, the GameState will consume the click via handlePointerDown.
@@ -307,24 +419,12 @@ export class PlayScreen {
       const inHeliDropMode = this.gameState?.heliDropMode;
       const inWorkerCrewMode = this.gameState?.workerCrewMode;
       const inWatchTowerMode = this.gameState?.watchTowerMode;
-      const inDroneReconMode = this.gameState?.droneReconMode || this.gameState?.droneReconMoving;
+      const inDroneReconMode = this.gameState?.droneReconMode;
       const inEngineTruckMode = this.gameState?.engineTruckMode;
       const inReconPlaneMode = this.gameState?.reconPlaneMode;
+      const inBulldozerMode = this.gameState?.bulldozerMode;
       
-      if (!selectedSkill && !inWaterBomberMode && !inHeliDropMode && !inWorkerCrewMode && !inWatchTowerMode && !inDroneReconMode && !inEngineTruckMode && !inReconPlaneMode) {
-        // Check if clicking on an active drone to select it
-        if (this.gameState?.droneReconActive?.length > 0 && evt.button === 0) {
-          const worldX = x / (this.gameState.camera?.zoom || 1) + (this.gameState.camera?.x || 0);
-          const worldY = y / (this.gameState.camera?.zoom || 1) + (this.gameState.camera?.y || 0);
-          for (const d of this.gameState.droneReconActive) {
-            const dx = worldX - d.x;
-            const dy = worldY - d.y;
-            if (Math.sqrt(dx * dx + dy * dy) <= 30) {
-              this.gameState.handlePointerDown(x, y, evt);
-              return;
-            }
-          }
-        }
+      if (!selectedSkill && !inWaterBomberMode && !inHeliDropMode && !inWorkerCrewMode && !inWatchTowerMode && !inDroneReconMode && !inEngineTruckMode && !inReconPlaneMode && !inBulldozerMode) {
         if (evt.button === 0) this.leftHeld = true;
         if (evt.button === 2) this.rightHeld = true;
       } else {
@@ -379,7 +479,7 @@ export class PlayScreen {
     ctx.fillStyle = p.isFailed ? "#f66" : "#8f8";
     ctx.font = "bold 30px Arial";
     const title = p.isEndless
-      ? (p.isFailed ? `Day ${p.currentDay + 1} — Season Over!` : `Day ${p.currentDay + 1} Survived!`)
+      ? (p.isFailed ? `Day ${p.currentDay} — Season Over!` : `Day ${p.currentDay} Survived!`)
       : (p.isFailed ? "Mission Failed" : "Level Complete!");
     ctx.fillText(title, cx, ly); ly += 36;
 
@@ -424,9 +524,9 @@ export class PlayScreen {
       ly += 4;
       ctx.fillStyle = "#888"; ctx.font = "bold 15px Arial";
       ctx.fillText("— Resource Usage —", cx, ly); ly += 22;
-      if (p.fuelConsumed > 0) { ctx.fillStyle = "#f90"; ctx.font = "16px Arial"; ctx.fillText(`Fuel: ${p.fuelConsumed}`, cx, ly); ly += 20; }
-      if (p.retardantConsumed > 0) { ctx.fillStyle = "#f44"; ctx.font = "16px Arial"; ctx.fillText(`Retardant: ${p.retardantConsumed}`, cx, ly); ly += 20; }
-      if (p.foodWear > 0) { ctx.fillStyle = "#f94"; ctx.font = "16px Arial"; ctx.fillText(`Food consumed: ${p.foodWear}`, cx, ly); ly += 20; }
+      if (p.fuelConsumed > 0) { ctx.fillStyle = "#f90"; ctx.font = "16px Arial"; ctx.fillText(`Fuel: ${Math.floor(p.fuelConsumed)}`, cx, ly); ly += 20; }
+      if (p.retardantConsumed > 0) { ctx.fillStyle = "#f44"; ctx.font = "16px Arial"; ctx.fillText(`Retardant: ${Math.floor(p.retardantConsumed)}`, cx, ly); ly += 20; }
+      if (p.foodWear > 0) { ctx.fillStyle = "#f94"; ctx.font = "16px Arial"; ctx.fillText(`Food consumed: ${Math.floor(p.foodWear)}`, cx, ly); ly += 20; }
     }
 
     // Buttons
@@ -468,16 +568,20 @@ export class PlayScreen {
     this.mouse.x = x;
     this.mouse.y = y;
 
+    // Update skill wheel hover
+    this.skillWheelHUD?.handlePointerMove(x, y);
+
     // Sync button state from the browser's authoritative bitmask to prevent stuck buttons
     if (evt) {
       this.leftHeld  = (evt.buttons & 1) !== 0;
       this.rightHeld = (evt.buttons & 2) !== 0;
     }
 
-    // Update bulldozer cursor position
-    if (this.gameState?.bulldozerActive) {
-      this.gameState.bulldozerMouseX = x;
-      this.gameState.bulldozerMouseY = y;
+    // Update bulldozer cursor position (world coordinates, used during targeting)
+    if (this.gameState?.bulldozerMode) {
+      const cam = this.gameState.camera;
+      this.gameState.bulldozerMouseX = cam.x + x / cam.zoom;
+      this.gameState.bulldozerMouseY = cam.y + y / cam.zoom;
     }
 
     // Update heli drop targeting circle position
@@ -507,8 +611,8 @@ export class PlayScreen {
       this.gameState.watchTowerMouseY = worldY;
     }
 
-    // Update drone recon targeting circle position
-    if (this.gameState?.droneReconMode || this.gameState?.droneReconMoving) {
+    // Update drone recon targeting circle position (also when drones are active so they follow cursor)
+    if (this.gameState?.droneReconMode || this.gameState?.droneReconActive?.length > 0) {
       const cam = this.gameState.camera;
       const worldX = cam.x + x / cam.zoom;
       const worldY = cam.y + y / cam.zoom;
@@ -529,6 +633,12 @@ export class PlayScreen {
   handleKeyDown(evt) {
     const key = evt.key.toLowerCase();
     this.keys[key] = true;
+
+    // Close skill wheel on ESC (before any other ESC handling)
+    if (key === "escape" && this.skillWheelHUD?.isOpen) {
+      this.skillWheelHUD.close();
+      return;
+    }
 
     // Don't allow other input while fire control modal is open and expanded
     if (this.fireControlModal?.isExpanded) {
@@ -572,6 +682,19 @@ export class PlayScreen {
   }
 
   handlePointerUp(evt) {
+    // Middle mouse release: confirm skill wheel selection
+    if (evt?.button === 1) {
+      if (this.skillWheelHUD?.isOpen) {
+        const result = this.skillWheelHUD.confirmAndClose();
+        if (result) {
+          if (result.skillKey === 1) this.gameState.waterBomberUseRetardant = result.retardant;
+          if (result.skillKey === 2) this.gameState.heliDropUseRetardant    = result.retardant;
+          this.skillHotbarHUD?.activateSkill(result.skillKey);
+        }
+      }
+      return;
+    }
+
     // Use the bitmask of still-held buttons for accuracy (handles multi-button release order)
     if (evt) {
       this.leftHeld  = (evt.buttons & 1) !== 0;

@@ -36,14 +36,11 @@ export class MainMenuScreen {
     // anchorX / anchorY are fractions of canvas size for the button group origin.
     // e.g. anchorX: 0.5 centers horizontally, anchorY: 0.25 places near top.
     this.layoutConfig = {
-      anchorX:              layoutConfig.anchorX              ?? 0.11,   // left edge of button group (fraction of canvas width)
-      anchorY:              layoutConfig.anchorY              ?? 0.72,   // top edge of first button (fraction of canvas height)
-      buttonWidth:          layoutConfig.buttonWidth          ?? 320,    // default logical px (scaled with canvas)
-      continueButtonWidth:  layoutConfig.continueButtonWidth  ?? null,   // override for Continue button
-      newGameButtonWidth:   layoutConfig.newGameButtonWidth   ?? null,   // override for New Game button
-      settingsButtonWidth:  layoutConfig.settingsButtonWidth  ?? 340,   // override for Settings button
-      buttonHeight:         layoutConfig.buttonHeight         ?? 141,    // logical px (scaled with canvas)
-      gap:                  layoutConfig.gap                  ?? 7,      // gap between buttons, logical px
+      anchorX:      layoutConfig.anchorX      ?? 0.5,
+      anchorY:      layoutConfig.anchorY      ?? 0.5,
+      buttonWidth:  layoutConfig.buttonWidth  ?? 260,
+      buttonHeight: layoutConfig.buttonHeight ?? 48,
+      gap:          layoutConfig.gap          ?? 14,
     };
 
     this.hoveredButton = null; // "continue" | "newGame" | "settings" | "confirmYes" | "confirmNo"
@@ -70,27 +67,19 @@ export class MainMenuScreen {
   }
 
   _getButtonRects(layout) {
-    const { h, gap, groupCenterX, baseY, hasSave, scale } = layout;
+    const { h, gap, cw, ch, scale } = layout;
     const lc = this.layoutConfig;
-    
-    // Helper to get individual button width or fall back to default
-    const getButtonWidth = (widthKey) => {
-      const val = lc[widthKey];
-      return val !== null && val !== undefined ? Math.max(80, Math.round(val * scale)) : Math.max(80, Math.round(lc.buttonWidth * scale));
+    const btnW = Math.max(80, Math.round(lc.buttonWidth * scale));
+    const btnH = Math.max(24, Math.round(lc.buttonHeight * scale));
+    const totalH = 3 * btnH + 2 * gap;
+    const startX = Math.round(cw / 2 - btnW / 2);
+    const startY = Math.round(ch / 2 - totalH / 2);
+
+    return {
+      continue: { x: startX, y: startY,                      w: btnW, h: btnH },
+      newGame:  { x: startX, y: startY + btnH + gap,          w: btnW, h: btnH },
+      settings: { x: startX, y: startY + (btnH + gap) * 2,    w: btnW, h: btnH },
     };
-    
-    const continueW = getButtonWidth('continueButtonWidth');
-    const newGameW = getButtonWidth('newGameButtonWidth');
-    const settingsW = getButtonWidth('settingsButtonWidth');
-    
-    const rects = {};
-    const startX = groupCenterX; // groupCenterX is now the left edge
-    
-    // Always show all 3 buttons — Continue starts new game if no save exists
-    rects.continue = { x: startX,                              y: baseY, w: continueW, h };
-    rects.newGame  = { x: startX + continueW + gap,             y: baseY, w: newGameW,  h };
-    rects.settings = { x: startX + continueW + newGameW + gap * 2, y: baseY, w: settingsW, h };
-    return rects;
   }
 
   _getConfirmRects(layout) {
@@ -135,34 +124,32 @@ export class MainMenuScreen {
   }
 
   _drawButton(ctx, r, label, isHovered, style) {
-    const s = style ?? this.buttonStyle;
-
     // Glow
     ctx.save();
-    ctx.filter = "blur(8px)";
-    ctx.lineWidth = 4;
-    ctx.strokeStyle = "rgba(16, 16, 16, 0.8)";
-    ctx.fillStyle = isHovered ? s.glowColorHover : s.glowColor;
+    ctx.filter = "blur(6px)";
+    ctx.fillStyle = isHovered ? "rgba(255, 180, 50, 0.5)" : "rgba(255, 140, 0, 0.3)";
     ctx.beginPath();
-    ctx.roundRect(r.x, r.y, r.w, r.h, s.borderRadius + 2);
+    ctx.roundRect(r.x, r.y, r.w, r.h, 12);
     ctx.fill();
-    ctx.stroke();
     ctx.restore();
 
-    // Button body
+    // Body
     ctx.save();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = s.strokeColor;
-    ctx.fillStyle = isHovered ? s.fillColorHover : s.fillColor;
+    ctx.fillStyle   = isHovered ? "rgba(0, 0, 0, 0.55)" : "rgba(0, 0, 0, 0.4)";
+    ctx.strokeStyle = "rgba(16, 16, 16, 0.95)";
+    ctx.lineWidth   = 2;
     ctx.beginPath();
-    ctx.roundRect(r.x, r.y, r.w, r.h, s.borderRadius);
+    ctx.roundRect(r.x, r.y, r.w, r.h, 12);
     ctx.fill();
     ctx.stroke();
     ctx.restore();
 
-    ctx.fillStyle = s.textColor;
-    ctx.font = s.font;
-    ctx.textAlign = "center";
+    // Label
+    const cw = ctx.canvas.width;
+    const scale = Math.min(cw / 1280, ctx.canvas.height / 720, 2);
+    ctx.fillStyle    = "white";
+    ctx.font         = `bold ${Math.max(15, Math.round(20 * scale))}px Arial`;
+    ctx.textAlign    = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(label, r.x + r.w / 2, r.y + r.h / 2);
   }

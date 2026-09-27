@@ -25,12 +25,12 @@ export const SKILL_CONFIG = {
     cooldown:           8,     // s   — base cooldown between uses
     pathExtendDist:     150,   // px  — entry/exit path extension beyond click points
     sprayStepSize:      20,    // px  — distance between spray dots along path
-    fuelCostBase:       3,     // fuel units per sortie
-    fuelCostUpgraded:   2,     // fuel units w/ bomberFuelEff upgrade
+    fuelCostBase:       4,     // fuel units per sortie
+    fuelCostUpgraded:   3,     // fuel units w/ bomberFuelEff upgrade
     retardantCostBase:  2,     // retardant units per sortie
     retardantCostUpg:   1,     // retardant units w/ bomberRetEff upgrade
-    durabilityWear:     5,     // % per sortie (base)
-    durabilityWearUpg:  3,     // % per sortie w/ bomberDurability upgrade
+    durabilityWear:     25,     // % per sortie (base)
+    durabilityWearUpg:  20,     // % per sortie w/ bomberDurability upgrade
     cooldownMultUpg:    0.70,  // multiplier w/ bomberTurnaround upgrade
     dropRadiusMultUpg:  1.25,  // multiplier per bomberDrop1 / bomberDrop2 upgrade
   },
@@ -44,35 +44,33 @@ export const SKILL_CONFIG = {
     cooldown:           4,     // s   — base cooldown
     animSprayDelay:     0.5,   // s   — delay after animation starts before spray lands
     animDuration:       3,     // s   — total helicopter animation duration
-    fuelCostBase:       2,     // fuel units per deployment
-    fuelCostUpgraded:   1,     // fuel units w/ heliFuelEff upgrade
+    fuelCostBase:       3,     // fuel units per deployment
+    fuelCostUpgraded:   2,     // fuel units w/ heliFuelEff upgrade
     retardantCost:      1,     // retardant units (when retardant mode active)
-    durabilityWear:     4,     // % per deployment (base)
-    durabilityWearUpg:  2,     // % per deployment w/ heliDurability upgrade
+    durabilityWear:     20,     // % per deployment (base)
+    durabilityWearUpg:  15,     // % per deployment w/ heliDurability upgrade
     cooldownMultUpg:    0.80,  // multiplier per heliTurnaround1 / heliTurnaround2 upgrade
     suppressRadiusUpg:  1.30,  // multiplier w/ heliSuppression upgrade
   },
 
   // ──────────────────────────────────────────────────────────
-  // 3 · BULLDOZER  (key 3, toggle while holding LMB)
+  // 3 · BULLDOZER  (key 3, two-click path targeting)
   // ──────────────────────────────────────────────────────────
   bulldozer: {
-    targetingRadius:    180,   // px  — UI display radius
-    cutTime:            0.2,   // s   — time to cut one tree (lower = faster)
-    cutRadius:          24,    // px  — base cutting width
-    cutRadiusUpg:       32,    // px  — cutting width w/ dozerLineWidth upgrade
-    energy:             100,   // starting & max energy
-    drainRate:          25,    // energy/s while active + clicking
-    rechargeRate:       5,     // energy/s while inactive
-    rechargeMultUpg:    1.50,  // multiplier w/ dozerRecharge upgrade
-    cutTimeMultUpg:     0.60,  // multiplier w/ dozerSpeed upgrade (lower = faster)
-    fuelInterval:       1,     // s   — fuel consumed every N seconds (base)
-    fuelIntervalUpg1:   1.3,   // s   — w/ vehicleFuelEff1
-    fuelIntervalUpg2:   1.6,   // s   — w/ both vehicleFuelEff upgrades
-    fuelPerTick:        1,     // fuel units consumed per interval
-    wearInterval:       2,     // s   — durability drained every N seconds (base)
-    wearIntervalUpg:    1.30,  // multiplier per vehicleWear1 / vehicleWear2 upgrade
-    wearPerTick:        3,     // % durability per interval
+    targetingRadius:        180,   // px  — UI display radius
+    cutRadius:              24,    // px  — base cutting width
+    cutRadiusUpg:           32,    // px  — cutting width w/ dozerLineWidth upgrade
+    cutTime:                0.25,  // s   — time to cut one tree while in range
+    cutTimeMultUpg:         0.60,  // multiplier w/ dozerSpeed upgrade (lower = faster)
+    maxPathLength:          180,   // px  — max selectable path length per run
+    runSpeed:               8,     // px/s — dozer travel speed
+    fuelDrainRate:          0.30,   // fuel/s while running (base)
+    fuelDrainRateUpg1:      0.15,  // fuel/s w/ vehicleFuelEff1 upgrade
+    durabilityWearRate:     2,     // %/s while running (base)
+    durabilityWearRateUpg1: 0.75,   // %/s w/ vehicleWear1 upgrade
+    durabilityWearRateUpg2: 0.50,     // %/s w/ vehicleWear1 + vehicleWear2
+    cooldown:               25,     // s   — base cooldown between runs
+    cooldownMultUpg:        0.75,  // multiplier w/ dozerRecharge upgrade
   },
 
   // ──────────────────────────────────────────────────────────
@@ -86,8 +84,8 @@ export const SKILL_CONFIG = {
     cooldownMultUpg:    0.70,  // multiplier w/ sprinklerCooldown upgrade
     duration:           10,    // s   — zone active duration (base)
     durationBonusUpg:   4,     // s   — added duration w/ sprinklerDur upgrade
-    durabilityWear:     2,     // % per activation (base)
-    durabilityWearUpg:  1,     // % per activation w/ vehicleWear1 upgrade
+    durabilityWear:     25,     // % per activation (base)
+    durabilityWearUpg:  20,     // % per activation w/ vehicleWear1 upgrade
   },
 
   // ──────────────────────────────────────────────────────────
@@ -102,6 +100,7 @@ export const SKILL_CONFIG = {
     maxCharges:         1,     //      starting max (raised by crewAvail upgrades)
     rechargeMultUpg:    0.75,  // multiplier w/ crewRecovery upgrade
     burnOutDuration:    10,    // s   — tower stays active before burning out
+    foodWear:           5,     //      fed-status drained per activation (base)
   },
 
   // ──────────────────────────────────────────────────────────
@@ -112,15 +111,16 @@ export const SKILL_CONFIG = {
     radius:             200,   // px  — fog reveal radius
     radiusBonus1:       50,    // px  — added by droneRadius1 upgrade
     radiusBonus2:       50,    // px  — added by droneRadius2 upgrade
-    duration:           45,    // s   — time before drone expires
+    duration:           15,    // s   — time before drone expires
     durationBonus1:     15,    // s   — added by droneDuration1 upgrade
     durationBonus2:     15,    // s   — added by droneDuration2 upgrade
-    moveSpeed:          120,   // px/s — repositioning speed
+    moveSpeed:          40,   // px/s — repositioning speed
     moveSpeedMultUpg:   1.50,  // multiplier w/ droneControl upgrade
     chargeRecharge:     10,    // s   — base recharge time per charge
     startCharges:       1,     //
     maxCharges:         1,     //      starting max (raised by crewAvail upgrades)
     rechargeMultUpg:    0.75,  // multiplier w/ crewRecovery upgrade
+    foodWear:           5,     //      fed-status drained per activation (base)
   },
 
   // ──────────────────────────────────────────────────────────
@@ -130,8 +130,8 @@ export const SKILL_CONFIG = {
     targetingRadius:    600,   // px  — overlay circle while aiming
     revealDuration:     8,     // s   — full-map reveal duration
     cooldown:           20,    // s   — base cooldown
-    moneyCost:          2000,  // $   — money spent per deployment
-    durabilityWear:     2,     // % per deployment
+    moneyCost:          200,   // $   — money spent per deployment
+    durabilityWear:     25,     // % per deployment
   },
 
   // ──────────────────────────────────────────────────────────
@@ -149,6 +149,7 @@ export const SKILL_CONFIG = {
     drainMultUpg:       0.90,  // multiplier per crewStamina1 / crewStamina2 upgrade
     rechargeRate:       12,    // energy/s while idle
     foodWearInterval:   3,     // s   — food worn once per this many seconds of cutting
+    foodWear:           3,     //      fed-status drained per interval (base)
     maxTreesPerTick:    8,     //      max trees processed per update tick
   },
 
@@ -161,10 +162,10 @@ export const SKILL_CONFIG = {
     sprayRadiusMultUpg: 1.35,  // multiplier w/ engineRadius upgrade
     sprayTime:          0.8,   // s   — hold time to wet one tree
     sprayTimeMultUpg:   0.65,  // multiplier w/ engineSuppression upgrade (lower = faster)
-    wearInterval:       4,     // s   — 2% durability drained every N seconds
+    wearInterval:       2,     // s   — 3% durability drained every N seconds
     wearIntervalUpg1:   1.50,  // multiplier w/ engineMobility upgrade
     wearIntervalUpg2:   1.25,  // multiplier w/ engineRecharge upgrade
-    wearPerTick:        2,     // % durability per interval
+    wearPerTick:        5,     // % durability per interval
   },
 
   // ──────────────────────────────────────────────────────────
@@ -173,7 +174,7 @@ export const SKILL_CONFIG = {
   crewFood: {
     fedStatusDrainBase: 5,     // fed-status % drained per _consumeCrewFood() call
     drainMultUpg:       0.75,  // multiplier per lowerFoodCons1 / lowerFoodCons2 upgrade
-    foodRestorePerUnit: 20,    // fed-status restored per food item consumed
+    foodRestorePerUnit: 10,    // fed-status restored per food item consumed
     autoFeedThreshold:  75,    // auto-feed triggers when fed-status drops below this %
     // Underfed cooldown penalties (added seconds per charge recharge)
     underfedPenalty: {

@@ -25,35 +25,51 @@ export class HelpTooltipsModal {
       },
       {
         title: "Spraying Water",
-        content: "RIGHT CLICK and drag to spray water on trees.\nWet trees (blue) are suppresses which stops fire spread."
+        content: "RIGHT CLICK and drag to spray water on trees.\nWet trees (blue) are suppressed which stops fire spread."
       },
       {
         title: "Water Bomber [1]",
-        content: "Click [1] to select, then click start and end points.\nPress [1] again while targeting to toggle Water/Retardant mode.\nRetardant costs 4 extra but suppression lasts much longer. Cooldown: 8 seconds."
+        content: "Press [1] to select, then click start and end points for a strafe run.\nPress [1] again while targeting to toggle Water / Retardant mode.\nRetardant costs extra but suppression lasts much longer. Cooldown: 8s."
       },
       {
-        title: "Bulldozer [2]",
-        content: "Click [2] to activate bulldozer mode.\nLeft-click to cut trees very quickly with energy cost. Hold to continuously to cut. Recharges when inactive."
+        title: "Heli Drop [2]",
+        content: "Press [2] to select, then click a location to drop suppressant.\nPress [2] again while targeting to toggle Water / Retardant mode.\nRetardant costs extra but suppression lasts much longer. Cooldown: 4s."
       },
       {
-        title: "Helicopter Drop [3]",
-        content: "Click [3] to select, then click to drop suppressant.\nPress [3] again while targeting to toggle Water/Retardant mode.\nRetardant costs 2 extra but suppression lasts much longer. Cooldown: 4 seconds."
+        title: "Bulldozer [3]",
+        content: "Press [3] to activate, then click a start point and an end point to carve a firebreak.\nThe dozer travels the path automatically, cutting all trees in its swath.\nDrains fuel and durability per second while running. Cooldown: 8s."
       },
       {
         title: "Sprinkler Trailer [4]",
-        content: "Click [4] to select, then click to deploy sprinkler.\nCreates a humidity boost zone for 10 seconds. Cooldown: 12 seconds."
+        content: "Press [4] to select, then click to deploy a sprinkler zone.\nCreates a high-humidity area that slows fire spread for 10 seconds. Cooldown: 12s."
       },
       {
         title: "Fire Watch [5]",
-        content: "Click [5] to select, then click to reveal fog of war.\nShows hidden trees in a radius. Cooldown: 10 seconds."
+        content: "Press [5] to select, then click to place a watch tower.\nReveals a large fog-of-war area on the minimap. Cooldown: 10s."
+      },
+      {
+        title: "Drone Recon [6]",
+        content: "Press [6] to select, then click to deploy a drone.\nDrone reveals fog of war in a radius and can be repositioned. Lasts 45 seconds."
+      },
+      {
+        title: "Recon Plane [7]",
+        content: "Press [7] to select, then click to call in a recon pass.\nReveals the entire map for 8 seconds. Costs $200. Cooldown: 20s."
+      },
+      {
+        title: "Fire Crew [8]",
+        content: "Hold LEFT CLICK to deploy your fire crew to cut trees.\nPress [8] to check crew stamina. Stamina drains while cutting and recharges when idle.\nCrew performance drops if underfed."
+      },
+      {
+        title: "Fire Truck [9]",
+        content: "Hold RIGHT CLICK to use the fire truck to spray water.\nPress [9] to check truck durability. Durability wears with use — repair at base between missions."
       },
       {
         title: "Fire Control Modal",
-        content: "Click the header (top-left) to open Fire Control Modal. Adjust weather, fire spread, and tree properties in real-time."
+        content: "Click the header (top-left) to open the Fire Control Modal.\nAdjust weather, fire spread, and tree properties in real-time."
       },
       {
         title: "Toggle Help",
-        content: "Press [I] anytime to open/close this help modal and good luck!"
+        content: "Press [I] anytime to open/close this help panel. Good luck!"
       }
     ];
   }

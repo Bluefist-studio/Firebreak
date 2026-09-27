@@ -4,12 +4,14 @@
  * Weather detail depends on purchased upgrades (weatherForecast, betterForecast, perfectForecast).
  */
 import { LowResourcesModal } from "./LowResourcesModal.js";
+import { getMissionReward } from "../data/missions.js";
 
 export class PreMissionScreen {
-  constructor({ economyState, onStart, onBack }) {
+  constructor({ economyState, onStart, onBack, backgroundImage }) {
     this.economy = economyState;
     this.onStart = onStart;
     this.onBack = onBack;
+    this.backgroundImage = backgroundImage;
     this.lowResourcesModal = new LowResourcesModal();
 
     this.mission = null;
@@ -43,8 +45,14 @@ export class PreMissionScreen {
     const h = ctx.canvas.height;
     const scale = Math.min(w / 1280, h / 720, 2);
 
-    // Dark background
-    ctx.fillStyle = "#000000";
+    // Background image
+    if (this.backgroundImage?.complete && this.backgroundImage.naturalWidth) {
+      ctx.drawImage(this.backgroundImage, 0, 0, w, h);
+    } else {
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, w, h);
+    }
+    ctx.fillStyle = "rgba(0, 0, 0, 0.65)";
     ctx.fillRect(0, 0, w, h);
 
     // ── Title ──
@@ -101,7 +109,7 @@ export class PreMissionScreen {
       y += lineH;
 
       // Reward
-      const reward = mission.missionReward || 0;
+      const reward = getMissionReward(mission);
       ctx.fillStyle = "#4CAF50";
       ctx.font = `${Math.max(12, Math.round(14 * scale))}px Arial`;
       ctx.fillText(`Reward: $${reward.toLocaleString()}`, px + 14, y);
@@ -305,10 +313,10 @@ export class PreMissionScreen {
 
       const resources = [
         { label: "Money", value: `$${(e?.money ?? 0).toLocaleString()}`, color: "#FFD54F" },
-        { label: "Fuel", value: `${e?.fuel ?? 0} / ${e?.fuelCap ?? 0}`, color: "#f90", warn: (e?.fuel ?? 0) < 5 },
-        { label: "Retardant", value: `${e?.retardant ?? 0} / ${e?.retardantCap ?? 0}`, color: "#f44", warn: (e?.retardant ?? 0) < 3 },
-        { label: "Food", value: `${e?.food ?? 0} / ${e?.foodCap ?? 0}`, color: "#4c4", warn: (e?.food ?? 0) < 3 },
-        { label: "Parts", value: `${e?.parts ?? 0} / ${e?.partsCap ?? 0}`, color: "#88f" },
+        { label: "Fuel", value: `${Math.floor(e?.fuel ?? 0)} / ${Math.floor(e?.fuelCap ?? 0)}`, color: "#f90", warn: (e?.fuel ?? 0) < 5 },
+        { label: "Retardant", value: `${Math.floor(e?.retardant ?? 0)} / ${Math.floor(e?.retardantCap ?? 0)}`, color: "#f44", warn: (e?.retardant ?? 0) < 3 },
+        { label: "Food", value: `${Math.floor(e?.food ?? 0)} / ${Math.floor(e?.foodCap ?? 0)}`, color: "#4c4", warn: (e?.food ?? 0) < 3 },
+        { label: "Parts", value: `${Math.floor(e?.parts ?? 0)} / ${Math.floor(e?.partsCap ?? 0)}`, color: "#88f" },
       ];
 
       for (const r of resources) {
@@ -430,9 +438,9 @@ export class PreMissionScreen {
   _checkLowResources() {
     const e = this.economy;
     const warnings = [];
-    if ((e?.fuel ?? 0) < 5) warnings.push(`Fuel: ${e.fuel} / ${e.fuelCap}`);
-    if ((e?.retardant ?? 0) < 3) warnings.push(`Retardant: ${e.retardant} / ${e.retardantCap}`);
-    if ((e?.food ?? 0) < 3) warnings.push(`Food: ${e.food} / ${e.foodCap}`);
+    if ((e?.fuel ?? 0) < 5) warnings.push(`Fuel: ${Math.floor(e.fuel)} / ${Math.floor(e.fuelCap)}`);
+    if ((e?.retardant ?? 0) < 3) warnings.push(`Retardant: ${Math.floor(e.retardant)} / ${Math.floor(e.retardantCap)}`);
+    if ((e?.food ?? 0) < 3) warnings.push(`Food: ${Math.floor(e.food)} / ${Math.floor(e.foodCap)}`);
     return warnings;
   }
 

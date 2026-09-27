@@ -1,6 +1,7 @@
 export class ScreenManager {
-  constructor({ screens, initial }) {
+  constructor({ screens, initial, musicManager = null }) {
     this.screens = screens;
+    this.musicManager = musicManager;
     this.current = null;
 
     this._transition = {
@@ -28,6 +29,8 @@ export class ScreenManager {
 
     this.current = next;
     if (this.current.onEnter) this.current.onEnter(payload);
+
+    this.musicManager?.onScreenChange(name);
 
     this._transition = {
       active: true,
